@@ -2,7 +2,7 @@
 
 **Cenário escolhido:** Sala de aula inteligente (ocupação, conforto e consumo de energia)
 
-**Integrantes:** ana liz bomfim gomes, christopher star correa de oliveira, mateus silva de sousa
+**Integrantes:** Ana Liz Bomfim Gomes, Christopher Star Correa de Oliveira, Gustavo Alves Marçal, Mateus Silva de Sousa
 
 ---
 
