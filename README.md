@@ -1,6 +1,6 @@
 # Atividade em Grupo 01 — Análise inicial de um sistema ubíquo
 
-**Cenário escolhido:** Lembrete Inteligente de Lanche para Estudo em Casa (Foco em Extrema Simplicidade)
+**Cenário escolhido:** Lembrete Inteligente de Lanche para Estudo em Casa
 
 **Integrantes:** Ana Liz Bomfim Gomes, Christopher Star Correa de Oliveira, Gustavo Alves Marçal, Mateus Silva de Sousa
 
