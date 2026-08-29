@@ -1,6 +1,6 @@
 # Atividade em Grupo 02 — Processamento e distribuição de responsabilidades
 
-**Cenário escolhido:** Lembrete Inteligente de Lanche para Estudo em Casa (Foco em Extrema Simplicidade)
+**Cenário escolhido:** Lembrete Inteligente de Lanche para Estudo em Casa
 
 **Integrantes:** Ana Liz Bomfim Gomes, Christopher Star Correa de Oliveira, Gustavo Alves Marçal, Mateus Silva de Sousa
 
