@@ -221,11 +221,15 @@ funcao processarEventoLeitura(evento):
 
 ### 12. Comportamento diante de falhas
 
-- **Falha escolhida:** **Perda de conexão Wi-Fi / Indisponibilidade de Internet**.
-- **Comportamento e degradação:**
-  - O sistema opera em modo de **degradação graciosa (Fallback Local)**.
-  - Como toda a lógica, validações, estado e temporizador residem na memória do ESP32 (Borda), o sensor ultrassônico e os atuadores locais (LED e Buzzer) continuam funcionando sem qualquer prejuízo.
-  - O único serviço degradado é o envio da notificação no celular via Telegram Bot. O estudante continua recebendo o aviso de pausa normalmente por meio dos sinais visuais e sonoros instalados em sua mesa de estudo.
+ **Falha escolhida:** **Perda temporária ou persistente do reconhecimento do estudante pela câmera**.
+**Comportamento e degradação:**
+- O sistema opera em modo de degradação graciosa, evitando pausar o temporizador imediatamente após uma única falha de detecção.
+- Quando a câmera perde o reconhecimento do estudante, o sistema mantém o estado atual do temporizador e realiza novas tentativas de detecção durante alguns segundos.
+- Caso o reconhecimento seja restabelecido nesse período, o sistema continua a operação normalmente, sem alterar a contagem do tempo.
+- Se a falha de detecção persistir, o sistema emite um alerta ao usuário, informando sobre o problema e solicitando a verificação da iluminação do ambiente ou da posição da câmera.
+- Após o alerta, novas tentativas de reconhecimento continuam sendo realizadas durante um período determinado.
+- Se o estudante voltar a ser reconhecido, o temporizador continua normalmente de onde parou.
+- Caso a falha persista mesmo após as novas tentativas, o sistema pausa o temporizador, evitando que o tempo seja contabilizado incorretamente enquanto não for possível confirmar a presença do estudante.
 
 ---
 
