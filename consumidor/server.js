@@ -14,6 +14,7 @@ app.post("/api/v1/eventos", (req, res) => {
     console.log("Dispositivo:", evento.deviceId);
     console.log("Tipo:", evento.eventType);
     console.log("Estado:", evento.state);
+    console.log("Confirmação de sensores:", evento.sensorConfirmacao || "não informado");
     console.log("=======================\n");
 
     res.status(200).json({
