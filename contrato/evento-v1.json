@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "eventId": "evt-1",
+  "deviceId": "esp32-mesa-01",
+  "eventType": "study.break.required",
+  "state": "PAUSA_RECOMENDADA"
+}
