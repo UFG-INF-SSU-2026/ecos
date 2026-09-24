@@ -10,6 +10,7 @@ app.post("/api/v1/eventos", (req, res) => {
     const evento = req.body;
 
     console.log("\n=== EVENTO RECEBIDO ===");
+    console.log("Versão do contrato:", evento.schemaVersion);
     console.log("ID:", evento.eventId);
     console.log("Dispositivo:", evento.deviceId);
     console.log("Tipo:", evento.eventType);
