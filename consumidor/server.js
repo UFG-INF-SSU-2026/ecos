@@ -10,10 +10,12 @@ app.post("/api/v1/eventos", (req, res) => {
     const evento = req.body;
 
     console.log("\n=== EVENTO RECEBIDO ===");
+    console.log("Versão do contrato:", evento.schemaVersion);
     console.log("ID:", evento.eventId);
     console.log("Dispositivo:", evento.deviceId);
     console.log("Tipo:", evento.eventType);
     console.log("Estado:", evento.state);
+    console.log("Confirmação de sensores:", evento.sensorConfirmacao || "não informado");
     console.log("=======================\n");
 
     res.status(200).json({

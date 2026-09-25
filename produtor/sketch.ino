@@ -4,6 +4,7 @@
 
 const int TRIG_PIN = 4;
 const int ECHO_PIN = 2;
+const int CAMERA_PIN = 14;
 const int BOTAO_FALHA = 12;
 const int LED_VERDE = 25;
 const int LED_VERMELHO = 27;
@@ -33,6 +34,13 @@ float medirDistancia() {
   }
 
   return duracao * 0.0343 / 2.0;
+}
+
+bool cameraDetectaPessoa() {
+  // Sensor de câmera: segundo sensor de presença. No protótipo, o sinal
+  // já processado de detecção de pessoa é lido diretamente do pino
+  // digital (HIGH = pessoa detectada, LOW = pessoa não detectada).
+  return digitalRead(CAMERA_PIN) == HIGH;
 }
 
 void tocarAlerta() {
@@ -75,11 +83,12 @@ void enviarEventoHTTP() {
   String eventId = "evt-" + String(sequenciaEvento);
 
   String json = "{";
-  json += "\"schemaVersion\":1,";
+  json += "\"schemaVersion\":2,";
   json += "\"eventId\":\"" + eventId + "\",";
   json += "\"deviceId\":\"esp32-mesa-01\",";
   json += "\"eventType\":\"study.break.required\",";
-  json += "\"state\":\"PAUSA_RECOMENDADA\"";
+  json += "\"state\":\"PAUSA_RECOMENDADA\",";
+  json += "\"sensorConfirmacao\":\"ultrassonico+camera\"";
   json += "}";
 
   Serial.println("\n=== EVENTO GERADO ===");
@@ -133,6 +142,7 @@ void setup() {
 
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
+  pinMode(CAMERA_PIN, INPUT);
   pinMode(BOTAO_FALHA, INPUT_PULLUP);
   pinMode(LED_VERDE, OUTPUT);
   pinMode(LED_VERMELHO, OUTPUT);
@@ -160,12 +170,23 @@ void loop() {
   float distancia = medirDistancia();
 
   if (distancia < 0) {
-    Serial.println("Leitura do sensor invalida.");
+    Serial.println("Leitura do sensor ultrassonico invalida.");
     delay(1000);
     return;
   }
 
-  bool estudantePresente = distancia < 80;
+  bool presencaUltrassonico = distancia < 80;
+  bool presencaCamera = cameraDetectaPessoa();
+
+  // Fusao dos sensores: a presenca so e confirmada quando os dois
+  // sensores concordam. Isso reduz falsos positivos (ex.: ruido no
+  // sensor ultrassonico) em relacao ao uso de um unico sensor.
+  bool estudantePresente = presencaUltrassonico && presencaCamera;
+
+  Serial.print("Ultrassonico: ");
+  Serial.print(presencaUltrassonico ? "PRESENCA" : "AUSENCIA");
+  Serial.print(" | Camera: ");
+  Serial.println(presencaCamera ? "PRESENCA" : "AUSENCIA");
 
   if (estudantePresente) {
     digitalWrite(LED_VERDE, HIGH);
