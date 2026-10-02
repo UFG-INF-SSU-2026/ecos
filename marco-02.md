@@ -23,8 +23,6 @@ ESP32 → HTTP/HTTPS → API Consumidora
 
 O Marco 2 aproveita decisões tomadas nas atividades anteriores. Mantivemos a ideia do dispositivo próximo ao usuário, utilizando sensores e atuadores locais, mas acrescentamos uma comunicação real entre componentes.
 
-Também trabalhamos uma condição de falha, pois em um sistema ubíquo não podemos considerar que sensores, comunicação e serviços estarão disponíveis o tempo todo.
-
 ---
 
 ## 2. Arquitetura do sistema
