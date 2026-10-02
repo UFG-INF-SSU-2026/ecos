@@ -70,6 +70,8 @@ O código disponível no repositório em:
 
 corresponde à implementação utilizada pelo ESP32.
 
+> **Atenção:** o arquivo `diagram.json` do projeto Wokwi (mantido localmente no projeto do PlatformIO, fora deste repositório) precisa ser atualizado manualmente para incluir o novo sensor de câmera. Veja a seção [7. Adicionando o sensor de câmera no Wokwi](#7-adicionando-o-sensor-de-câmera-no-wokwi) abaixo antes de compilar.
+
 ### Compilando o projeto
 
 Após abrir o projeto no Visual Studio Code, utilize o PlatformIO para realizar a compilação.
@@ -115,7 +117,7 @@ Conectando ao Wi-Fi...
 Wi-Fi conectado.
 ```
 
-Quando o sensor ultrassônico detectar presença a uma distância inferior a 80 cm, será iniciada a contagem do tempo:
+Quando o sensor ultrassônico detectar presença a uma distância inferior a 80 cm **e** o sensor de câmera também detectar a presença de uma pessoa, será iniciada a contagem do tempo:
 
 ```text
 PRESENTE | Tempo: 0s
@@ -139,15 +141,17 @@ O ESP32 utiliza a rede Wi-Fi:
 
 O tempo configurado para gerar o evento de pausa durante a demonstração é de 10 segundos.
 
-Após iniciar a simulação, o sensor ultrassônico deve detectar a presença do estudante a uma distância inferior a 80 cm.
+Após iniciar a simulação, o sensor ultrassônico deve detectar a presença do estudante a uma distância inferior a 80 cm **e** o sensor de câmera deve detectar a presença de uma pessoa. A contagem do tempo só é iniciada quando os dois sensores confirmam a presença (fusão de sensores).
 
-O monitor serial apresentará a contagem:
+O monitor serial apresentará:
 
 ```text
+Ultrassonico: PRESENCA | Camera: PRESENCA
 PRESENTE | Tempo: 0s
+Ultrassonico: PRESENCA | Camera: PRESENCA
 PRESENTE | Tempo: 1s
-PRESENTE | Tempo: 2s
 ...
+Ultrassonico: PRESENCA | Camera: PRESENCA
 PRESENTE | Tempo: 10s
 ```
 
@@ -164,12 +168,13 @@ Com o estudante presente durante 10 segundos, o ESP32 gera o evento e realiza um
 O resultado esperado no monitor serial do produtor é:
 
 ```text
+Ultrassonico: PRESENCA | Camera: PRESENCA
 PRESENTE | Tempo: 10s
 
 PAUSA_RECOMENDADA
 
 === EVENTO GERADO ===
-{"schemaVersion":1,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA"}
+{"schemaVersion":2,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA","sensorConfirmacao":"ultrassonico+camera"}
 
 Enviando evento para o consumidor...
 SUCESSO - HTTP 200
@@ -184,6 +189,7 @@ ID: evt-1
 Dispositivo: esp32-mesa-01
 Tipo: study.break.required
 Estado: PAUSA_RECOMENDADA
+Confirmação de sensores: ultrassonico+camera
 ```
 
 O código HTTP `200` confirma que o consumidor recebeu o evento.
@@ -204,7 +210,7 @@ O resultado esperado é:
 PAUSA_RECOMENDADA
 
 === EVENTO GERADO ===
-{"schemaVersion":1,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA"}
+{"schemaVersion":2,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA","sensorConfirmacao":"ultrassonico+camera"}
 
 FALHA SIMULADA: comunicacao Wi-Fi indisponivel.
 FALHA DETECTADA: produtor sem conexao Wi-Fi.
@@ -235,23 +241,24 @@ O evento que estava aguardando é enviado após a recuperação da comunicação
 
 O payload utilizado na comunicação entre o produtor e o consumidor possui uma versão identificada pelo campo `schemaVersion`.
 
-O contrato utilizado pode ser consultado em: [Contrato do evento - versão 1](contrato/evento-v1.json)
+O contrato utilizado pode ser consultado em: [Contrato do evento - versão 2](contrato/evento-v2.json) (a [versão 1](contrato/evento-v1.json) permanece no repositório como histórico)
 
 Exemplo:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "eventId": "evt-1",
   "deviceId": "esp32-mesa-01",
   "eventType": "study.break.required",
-  "state": "PAUSA_RECOMENDADA"
+  "state": "PAUSA_RECOMENDADA",
+  "sensorConfirmacao": "ultrassonico+camera"
 }
 ```
 
 ---
 
-## 6. Configurações da Integração
+## 8. Configurações da Integração
 
 As configurações dos componentes, comunicação, tratamento da condição de falha e principais decisões arquiteturais podem ser consultadas em: [Configurações da integração](configuracoes.md)
 
@@ -259,4 +266,21 @@ Os códigos utilizados estão disponíveis em:
 
 - [Código do componente produtor](produtor/sketch.ino)
 - [Código do componente consumidor](consumidor/server.js)
-- [Contrato do evento](contrato/evento-v1.json)
+- [Contrato do evento](contrato/evento-v2.json)
+
+---
+
+## 7. Adicionando o sensor de câmera no Wokwi
+
+O arquivo `diagram.json` do projeto Wokwi não está incluído neste repositório (ele fica no projeto local do PlatformIO, junto com `platformio.ini` e `wokwi.toml`). Para simular o novo sensor de câmera, adicione ao `diagram.json` um componente com saída digital simples — por exemplo, uma chave/botão (`wokwi-pushbutton` ou `wokwi-slide-switch`) ou um sensor PIR (`wokwi-pir-motion-sensor`), representando o sinal já processado de detecção de pessoa que uma câmera com reconhecimento embarcado forneceria.
+
+Passos:
+
+1. No editor do `diagram.json` (painel do Wokwi no VS Code), adicione o novo componente à lista `parts`, com um `id` (por exemplo, `"camera1"`).
+2. Na lista `connections`, ligue o pino de saída do componente ao **GPIO 14** do ESP32 (pino definido em `CAMERA_PIN` no `sketch.ino`).
+3. Durante a simulação:
+   - Sinal em `HIGH` (chave ligada / botão pressionado / PIR ativo) = câmera detecta uma pessoa.
+   - Sinal em `LOW` (chave desligada / botão solto / PIR inativo) = câmera não detecta ninguém.
+4. Salve o `diagram.json`, refaça o **Build** no PlatformIO e reinicie a simulação no Wokwi.
+
+Para o fluxo normal da demonstração, deixe o componente da câmera na posição que gera `HIGH` (pessoa detectada) sempre que o sensor ultrassônico também detectar presença.

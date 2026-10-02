@@ -12,7 +12,7 @@ A integração implementada possui três elementos principais:
 - **Comunicação:** requisição HTTPS utilizando o método POST e payload JSON.
 - **Consumidor:** API desenvolvida em Node.js com Express e hospedada no Render.
 
-O ESP32 detecta a presença do estudante e controla o tempo de estudo. Após 10 segundos de presença contínua, o produtor gera um evento indicando que uma pausa é recomendada.
+O ESP32 utiliza dois sensores para detectar a presença do estudante — um sensor ultrassônico e um sensor de câmera — e controla o tempo de estudo. A presença só é confirmada quando os dois sensores concordam (fusão de sensores). Após 10 segundos de presença confirmada, o produtor gera um evento indicando que uma pausa é recomendada.
 
 Esse evento é enviado para o componente consumidor, que recebe os dados e registra o evento em seu log.
 
@@ -20,7 +20,7 @@ Esse evento é enviado para o componente consumidor, que recebe os dados e regis
 
 - [Código do componente produtor](produtor/sketch.ino)
 - [Código do componente consumidor](consumidor/server.js)
-- [Contrato do evento](contrato/evento-v1.json)
+- [Contrato do evento (versão 2)](contrato/evento-v2.json)
 - [Configurações da integração](configuracoes.md)
 - [Instruções de execução](instrucoes-execucao.md)
 
@@ -30,9 +30,11 @@ Esse evento é enviado para o componente consumidor, que recebe os dados e regis
 
 A arquitetura implementada no Marco 02 estabelece a comunicação entre o componente produtor e o componente consumidor.
 
-![Diagrama de Arquitetura do Marco 02](diagrama-marco-02.png)
+![Diagrama de Arquitetura do Marco 02](diagrama-marco-02-v2.png)
 
-O ESP32 atua como produtor, gerando o evento `PAUSA_RECOMENDADA`. A comunicação é realizada através de uma requisição HTTPS POST com payload JSON.
+*(O [diagrama anterior](diagrama-marco-02.png), sem o sensor de câmera, permanece no repositório como histórico.)*
+
+O ESP32 atua como produtor. O sensor ultrassônico e o sensor de câmera detectam a presença do estudante de forma independente, e a fusão desses dois sensores confirma a presença antes de o evento `PAUSA_RECOMENDADA` ser gerado. A comunicação é realizada através de uma requisição HTTPS POST com payload JSON.
 
 A API Node.js/Express atua como consumidor, recebe o evento, registra as informações no log e retorna uma resposta HTTP 200 ao produtor.
 
@@ -42,17 +44,18 @@ A API Node.js/Express atua como consumidor, recebe o evento, registra as informa
 
 A comunicação utiliza um payload JSON com estrutura definida e versão identificada pelo campo `schemaVersion`.
 
-[Contrato do evento - versão 1](contrato/evento-v1.json)
+[Contrato do evento - versão 2](contrato/evento-v2.json) (a [versão 1](contrato/evento-v1.json) permanece no repositório como histórico, anterior à inclusão do segundo sensor)
 
 Exemplo:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "eventId": "evt-1",
   "deviceId": "esp32-mesa-01",
   "eventType": "study.break.required",
-  "state": "PAUSA_RECOMENDADA"
+  "state": "PAUSA_RECOMENDADA",
+  "sensorConfirmacao": "ultrassonico+camera"
 }
 ```
 
@@ -65,8 +68,9 @@ Exemplo:
 | `deviceId` | Identifica o dispositivo produtor |
 | `eventType` | Informa o tipo do evento |
 | `state` | Informa o estado gerado pelo produtor |
+| `sensorConfirmacao` | Informa quais sensores confirmaram a presença que originou o evento (adicionado na versão 2, junto com o sensor de câmera) |
 
-A versão utilizada atualmente é `schemaVersion: 1`.
+A versão utilizada atualmente é `schemaVersion: 2`.
 
 Cada evento gerado possui um identificador no campo `eventId`.
 
@@ -113,26 +117,28 @@ O ESP32 é executado através do PlatformIO e do Wokwi Simulator.
 
 Após realizar o Build no PlatformIO, iniciar a simulação no Wokwi.
 
-Com o estudante presente, o monitor serial apresenta:
+Com o estudante presente e confirmado pelos dois sensores, o monitor serial apresenta:
 
 ```text
 Wi-Fi conectado.
+Ultrassonico: PRESENCA | Camera: PRESENCA
 PRESENTE | Tempo: 0s
+Ultrassonico: PRESENCA | Camera: PRESENCA
 PRESENTE | Tempo: 1s
-PRESENTE | Tempo: 2s
 ...
+Ultrassonico: PRESENCA | Camera: PRESENCA
 PRESENTE | Tempo: 10s
 ```
 
 ### Passo 3 — Geração do evento
 
-Ao atingir 10 segundos, o produtor gera o evento:
+Ao atingir 10 segundos de presença confirmada pelos dois sensores, o produtor gera o evento:
 
 ```text
 PAUSA_RECOMENDADA
 
 === EVENTO GERADO ===
-{"schemaVersion":1,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA"}
+{"schemaVersion":2,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA","sensorConfirmacao":"ultrassonico+camera"}
 ```
 
 Nesse momento, o evento foi criado pelo produtor e possui um identificador próprio.
@@ -174,6 +180,7 @@ ID: evt-1
 Dispositivo: esp32-mesa-01
 Tipo: study.break.required
 Estado: PAUSA_RECOMENDADA
+Confirmação de sensores: ultrassonico+camera
 =======================
 ```
 
@@ -208,7 +215,7 @@ Ao atingir 10 segundos, o evento é criado normalmente:
 PAUSA_RECOMENDADA
 
 === EVENTO GERADO ===
-{"schemaVersion":1,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA"}
+{"schemaVersion":2,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA","sensorConfirmacao":"ultrassonico+camera"}
 ```
 
 Como a condição de falha está ativa, o produtor interrompe sua conexão Wi-Fi:
@@ -272,15 +279,15 @@ Foi escolhido o formato JSON para representar os dados trocados entre os compone
 
 A estrutura da comunicação é definida por um contrato versionado através do campo `schemaVersion`.
 
-A versão utilizada no Marco 02 é:
+A versão utilizada no Marco 02, após a inclusão do sensor de câmera, é:
 
 ```text
-schemaVersion: 1
+schemaVersion: 2
 ```
 
 Isso permite que produtor e consumidor compartilhem uma estrutura previamente definida para a troca de dados.
 
-[Contrato do evento - versão 1](contrato/evento-v1.json)
+[Contrato do evento - versão 2](contrato/evento-v2.json) (a [versão 1](contrato/evento-v1.json) permanece como histórico)
 
 ### 7.4 Identificação dos eventos
 
@@ -303,3 +310,16 @@ Nessa situação, o evento permanece aguardando em memória enquanto a condiçã
 Após a recuperação da conexão Wi-Fi, o produtor realiza o envio do mesmo evento.
 
 No protótipo, essa condição é reproduzida através do botão conectado ao GPIO 12.
+
+### 7.6 Fusão de sensores (sensor ultrassônico + sensor de câmera)
+
+Foi adicionado um segundo sensor ao produtor: um sensor de câmera, responsável por detectar a presença de uma pessoa de forma independente do sensor ultrassônico já existente.
+
+A presença do estudante passou a ser confirmada apenas quando os dois sensores concordam simultaneamente, em vez de depender da leitura de um único sensor.
+
+Essa decisão reduz a chance de falsos positivos: uma leitura isolada e ruidosa de um dos sensores não é suficiente, isoladamente, para iniciar a contagem do tempo de estudo.
+
+Essa mudança motivou a evolução do contrato do evento para a versão 2, que passou a incluir o campo `sensorConfirmacao`, registrando quais sensores confirmaram a presença que originou o evento.
+
+- [Código do componente produtor](produtor/sketch.ino)
+- [Contrato do evento - versão 2](contrato/evento-v2.json)
