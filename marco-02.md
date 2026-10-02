@@ -343,47 +343,7 @@ A ideia é demonstrar que a decisão pode depender de mais de uma fonte de conte
 
 ---
 
-## 12. Possíveis alterações durante a apresentação
-
-O tempo necessário para gerar a recomendação está definido por:
-
-```cpp
-const unsigned long TEMPO_PAUSA = 10000;
-```
-
-O valor está em milissegundos.
-
-Portanto:
-
-```text
-10000 ms = 10 segundos
-```
-
-Caso seja alterado para:
-
-```cpp
-const unsigned long TEMPO_PAUSA = 15000;
-```
-
-o sistema passa a esperar aproximadamente 15 segundos.
-
-Também podemos alterar o limiar utilizado pelo sensor ultrassônico.
-
-Nesse caso, estamos alterando a distância utilizada pelo sistema para decidir se o usuário está presente.
-
-Outra possibilidade é alterar algum campo do contrato.
-
-Por exemplo:
-
-```json
-"state": "PAUSA_RECOMENDADA"
-```
-
-Qualquer alteração no contrato deve considerar a compatibilidade entre produtor e consumidor.
-
----
-
-## 13. Relação com Software para Sistemas Ubíquos
+## 12. Relação com Software para Sistemas Ubíquos
 
 Nosso sistema utiliza conceitos importantes de computação ubíqua.
 
@@ -421,7 +381,7 @@ Resposta
 
 ---
 
-## 14. Conclusão
+## 13. Conclusão
 
 No Marco 2 conseguimos validar uma fronteira real do nosso sistema ubíquo.
 
