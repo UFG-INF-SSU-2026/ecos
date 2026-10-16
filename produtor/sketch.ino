@@ -121,6 +121,7 @@ bool enviarEventoHTTP() {
     Serial.printf("Enviando evento por HTTPS (tentativa %d/%d)...\n", tentativa, TENTATIVAS_HTTP);
 
     WiFiClientSecure client;
+    client.setInsecure();
     client.setCACert(API_ROOT_CA);
 
     HTTPClient http;

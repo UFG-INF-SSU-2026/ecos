@@ -8,9 +8,9 @@ static const char* WIFI_PASSWORD = "";
 static const char* API_URL = "https://ecos-ecmd.onrender.com/api/v1/eventos";
 static const char* API_BEARER_TOKEN = "COLOQUE_AQUI_O_MESMO_ESP32_TOKEN_DO_SERVIDOR";
 
-// CAs raiz públicas ISRG Root X1 e GTS Root R1. O Render usa Let's Encrypt e
-// Google Trust Services para certificados gerenciados. Se o host escolhido
-// usar outra cadeia, substitua/adicione a CA raiz que a assina.
+// CAs raiz públicas. O host Render consultado usa atualmente a cadeia
+// Google Trust Services WE1 -> GTS Root R4; outras cadeias podem exigir
+// raízes adicionais, que devem ser adicionadas a este bundle.
 static const char* API_ROOT_CA = R"CERT(-----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
 TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
@@ -72,5 +72,18 @@ geExX6GjfhaknBZqlxi9dnKlC54dNuYvoS++cJEPqOba+MSSQGwlfnuzCdyyF62
 ARPBopY+Udf90WuioAnwMCeKpSwughQtiue+hMZL77/ZRBIls6Kl0obsXs7X9SQ
 98POyDGCBDTtWTurQ0sR8WNh8M5mQ5Fkzc4P4dyKliPUDqysU0ArSuiYgzNdws
 E3PYJ/HQcu51OyLemGhmW/HGY0dVHLqlCFF1pkgl
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIICCTCCAY6gAwIBAgINAgPlwGjvYxqccpBQUjAKBggqhkjOPQQDAzBHMQswCQYD
+VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG
+A1UEAxMLR1RTIFJvb3QgUjQwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAwMDAw
+WjBHMQswCQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2Vz
+IExMQzEUMBIGA1UEAxMLR1RTIFJvb3QgUjQwdjAQBgcqhkjOPQIBBgUrgQQAIgNi
+AATzdHOnaItgrkO4NcWBMHtLSZ37wWHO5t5GvWvVYRg1rkDdc/eJkTBa6zzuhXyi
+QHY7qca4R9gq55KRanPpsXI5nymfopjTX15YhmUPoYRlBtHci8nHc8iMai/lxKvR
+HYqjQjBAMA4GA1UdDwEB/wQEAwIBhjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQW
+BBSATNbrdP9JNqPV2Py1PsVq8JQdjDAKBggqhkjOPQQDAwNpADBmAjEA6ED/g94D
+9J+uHXqnLrmvT/aDHQ4thQEd0dlq7A/Cr8deVl5c1RxYIigL9zC2L7F8AjEA8GE8
+p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD
 -----END CERTIFICATE-----
 )CERT";
