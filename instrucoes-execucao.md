@@ -1,286 +1,138 @@
-# Instruções Mínimas de Execução
+# Execução e validação da integração segura
 
-Este documento apresenta os passos necessários para executar e validar a integração entre o ESP32 e a API consumidora.
+## O que foi acrescentado e por quê
 
-## 1. Consumidor
+O fluxo agora contém duas integrações encadeadas:
 
-O consumidor foi desenvolvido em Node.js com Express e está hospedado no Render.
-
-[Código do componente consumidor](consumidor/server.js)
-
-O endpoint utilizado para receber os eventos é:
-
-`POST https://ecos-ecmd.onrender.com/api/v1/eventos`
-
-### Execução local
-
-Para executar o consumidor localmente, acesse a pasta:
-
-```bash
-cd consumidor
+```text
+ESP32 produtor
+  └─ HTTPS + token → API Node.js consumidora/produtora
+                         └─ WSS + token → consumidor WebSocket
 ```
 
-Instale as dependências:
+1. O ESP32 envia `study.break.required` à API por HTTPS. A API identifica o ESP32 pelo token, exige que o `X-Device-Id` e o `deviceId` do evento correspondam a `esp32-mesa-01` e só autoriza o tipo `study.break.required`.
+2. Depois de validar o evento, a API, que antes apenas consumia eventos, passa a atuar também como produtora. Ela publica `study.break.notification` por WebSocket seguro (WSS) para um novo consumidor.
+3. O consumidor WebSocket autentica a API, associa o token ao dispositivo `consumidor-http-01`, aceita apenas `study.break.notification` e devolve uma confirmação identificada como `websocket-consumer-01`.
+
+O certificado TLS do servidor é validado nos dois canais; o firmware não usa `setInsecure()`. Os tokens são independentes, ficam em variáveis de ambiente no servidor e em `secrets.h` local no ESP32, que não deve ser versionado. A API faz comparação de tokens em tempo constante, valida o contrato e mantém deduplicação em memória para novas tentativas com o mesmo `eventId`.
+
+O contrato original HTTP continua em [evento-v2.json](contrato/evento-v2.json). O evento publicado pelo novo canal está em [notificacao-websocket-v1.json](contrato/notificacao-websocket-v1.json).
+
+## Requisitos
+
+- Node.js 20.6 ou superior e npm.
+- OpenSSL para gerar tokens e certificados locais.
+- Para o ESP32: VS Code com PlatformIO e Wokwi, além do projeto de simulação com `platformio.ini`, `wokwi.toml` e `diagram.json`. Esses arquivos do simulador não estão neste repositório.
+
+## Executar localmente os dois serviços
+
+Os comandos abaixo usam certificados de desenvolvimento para que a conexão local também seja HTTPS/WSS. Execute-os a partir da pasta do consumidor:
 
 ```bash
+cd "/Users/christopher/Desktop/UFG/Atividade Wokwi/ecos/consumidor"
 npm install
+cp .env.example .env
+mkdir -p .certs
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout .certs/local-key.pem \
+  -out .certs/local-cert.pem \
+  -days 365 -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+openssl rand -hex 32
+openssl rand -hex 32
 ```
 
-Inicie a aplicação:
+Copie os dois tokens gerados para `.env`: o primeiro em `ESP32_TOKEN` e o segundo em `WS_PRODUCER_TOKEN`. Use tokens diferentes. No desenvolvimento local, mantenha `WS_CONSUMER_URL=wss://localhost:3001/api/v1/publicacoes`, `WS_CA_CERT=.certs/local-cert.pem` e os caminhos TLS do exemplo. O arquivo `.env` e a chave privada ficam ignorados pelo Git.
+
+Abra dois terminais, ambos na pasta `consumidor`. Inicie primeiro o consumidor WebSocket:
 
 ```bash
-npm start
+npm run start:ws:local
 ```
 
-O consumidor utilizará a porta definida pela variável de ambiente `PORT`. Caso ela não esteja definida, será utilizada a porta `3000`.
+Depois inicie a API HTTP:
 
----
-## 2. Preparação do Ambiente do Produtor
-
-Para executar o componente produtor é necessário utilizar o Visual Studio Code com as extensões do PlatformIO e do Wokwi.
-
-### Extensões necessárias
-
-No Visual Studio Code, acesse a aba **Extensions** (`Ctrl + Shift + X`) e instale:
-
-- **PlatformIO IDE**
-- **Wokwi Simulator**
-
-O PlatformIO é utilizado para compilar o código do ESP32 e gerar os arquivos necessários para a execução.
-
-O Wokwi Simulator é utilizado para executar a simulação do ESP32 e dos componentes eletrônicos diretamente no Visual Studio Code.
-
-### Abrindo o projeto no PlatformIO
-
-Abra no Visual Studio Code a pasta do projeto utilizada para a simulação do ESP32.
-
-O projeto deve possuir os arquivos de configuração do PlatformIO e do Wokwi, incluindo:
-
-```text
-platformio.ini
-wokwi.toml
-diagram.json
-src/
-└── main.cpp
+```bash
+npm run start:local
 ```
 
-O código disponível no repositório em:
+No modo local, a API atende em `https://localhost:3000` e o novo consumidor em `wss://localhost:3001/api/v1/publicacoes`. O certificado é autoassinado e serve somente para desenvolvimento; o `curl` e o cliente WebSocket confiam nele explicitamente através de `--cacert` e `WS_CA_CERT`.
 
-[Código do componente produtor](produtor/sketch.ino)
+## Testar o fluxo completo local
 
-corresponde à implementação utilizada pelo ESP32.
+Em um terceiro terminal, carregue as configurações locais:
 
-> **Atenção:** o arquivo `diagram.json` do projeto Wokwi (mantido localmente no projeto do PlatformIO, fora deste repositório) precisa ser atualizado manualmente para incluir o novo sensor de câmera. Veja a seção [7. Adicionando o sensor de câmera no Wokwi](#7-adicionando-o-sensor-de-câmera-no-wokwi) abaixo antes de compilar.
-
-### Compilando o projeto
-
-Após abrir o projeto no Visual Studio Code, utilize o PlatformIO para realizar a compilação.
-
-Na barra inferior do Visual Studio Code, clique na opção **Build** do PlatformIO.
-
-Também é possível acessar:
-
-**PlatformIO → Project Tasks → esp32dev → General → Build**
-
-A compilação deve ser concluída sem erros.
-
-O PlatformIO gera os arquivos utilizados pelo simulador dentro de:
-
-```text
-.pio/build/esp32dev/
+```bash
+cd "/Users/christopher/Desktop/UFG/Atividade Wokwi/ecos/consumidor"
+set -a
+source .env
+set +a
 ```
 
-Entre eles:
+Envie um evento HTTP válido. A API só retorna sucesso depois que o consumidor WebSocket confirma a publicação:
 
-```text
-firmware.bin
-firmware.elf
+```bash
+curl --cacert .certs/local-cert.pem -i \
+  -X POST https://localhost:3000/api/v1/eventos \
+  -H "Authorization: Bearer $ESP32_TOKEN" \
+  -H "X-Device-Id: esp32-mesa-01" \
+  -H "Content-Type: application/json" \
+  -d '{"schemaVersion":2,"eventId":"evt-demo-001","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA","sensorConfirmacao":"ultrassonico+camera"}'
 ```
 
-O arquivo `wokwi.toml` referencia esses arquivos para iniciar a simulação:
-
-```toml
-[wokwi]
-version = 1
-firmware = ".pio/build/esp32dev/firmware.bin"
-elf = ".pio/build/esp32dev/firmware.elf"
-```
-
-### Executando no Wokwi
-
-Depois de realizar o **Build** pelo PlatformIO, inicie o Wokwi Simulator no Visual Studio Code.
-
-Com a simulação iniciada, o monitor serial deverá apresentar inicialmente:
-
-```text
-Conectando ao Wi-Fi...
-Wi-Fi conectado.
-```
-
-Quando o sensor ultrassônico detectar presença a uma distância inferior a 80 cm **e** o sensor de câmera também detectar a presença de uma pessoa, será iniciada a contagem do tempo:
-
-```text
-PRESENTE | Tempo: 0s
-PRESENTE | Tempo: 1s
-PRESENTE | Tempo: 2s
-...
-```
-
-Sempre que houver uma alteração no código do ESP32, salve o arquivo, execute novamente o **Build** do PlatformIO e reinicie a simulação do Wokwi para utilizar o novo firmware.
----
-
-## 3. Produtor
-
-O produtor é um ESP32 simulado no Wokwi.
-
-[Código do componente produtor](produtor/sketch.ino)
-
-O ESP32 utiliza a rede Wi-Fi:
-
-`Wokwi-GUEST`
-
-O tempo configurado para gerar o evento de pausa durante a demonstração é de 10 segundos.
-
-Após iniciar a simulação, o sensor ultrassônico deve detectar a presença do estudante a uma distância inferior a 80 cm **e** o sensor de câmera deve detectar a presença de uma pessoa. A contagem do tempo só é iniciada quando os dois sensores confirmam a presença (fusão de sensores).
-
-O monitor serial apresentará:
-
-```text
-Ultrassonico: PRESENCA | Camera: PRESENCA
-PRESENTE | Tempo: 0s
-Ultrassonico: PRESENCA | Camera: PRESENCA
-PRESENTE | Tempo: 1s
-...
-Ultrassonico: PRESENCA | Camera: PRESENCA
-PRESENTE | Tempo: 10s
-```
-
-Ao atingir o tempo configurado, o produtor gera o evento `PAUSA_RECOMENDADA`.
-
----
-
-## 4. Execução Normal
-
-Para testar a integração sem falhas, mantenha o botão conectado ao GPIO 12 liberado.
-
-Com o estudante presente durante 10 segundos, o ESP32 gera o evento e realiza uma requisição HTTPS utilizando o método POST para o consumidor.
-
-O resultado esperado no monitor serial do produtor é:
-
-```text
-Ultrassonico: PRESENCA | Camera: PRESENCA
-PRESENTE | Tempo: 10s
-
-PAUSA_RECOMENDADA
-
-=== EVENTO GERADO ===
-{"schemaVersion":2,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA","sensorConfirmacao":"ultrassonico+camera"}
-
-Enviando evento para o consumidor...
-SUCESSO - HTTP 200
-{"status":"recebido","eventId":"evt-1"}
-```
-
-No consumidor, o recebimento do evento pode ser verificado através do log:
-
-```text
-=== EVENTO RECEBIDO ===
-ID: evt-1
-Dispositivo: esp32-mesa-01
-Tipo: study.break.required
-Estado: PAUSA_RECOMENDADA
-Confirmação de sensores: ultrassonico+camera
-```
-
-O código HTTP `200` confirma que o consumidor recebeu o evento.
-
----
-
-## 5. Teste da Condição de Falha
-
-O botão conectado ao GPIO 12 é utilizado para simular uma indisponibilidade da comunicação Wi-Fi do produtor.
-
-Para executar o teste, mantenha o botão pressionado antes do evento ser gerado aos 10 segundos.
-
-Quando o evento for gerado, o ESP32 identifica que a condição de falha está ativa e interrompe sua conexão Wi-Fi.
-
-O resultado esperado é:
-
-```text
-PAUSA_RECOMENDADA
-
-=== EVENTO GERADO ===
-{"schemaVersion":2,"eventId":"evt-1","deviceId":"esp32-mesa-01","eventType":"study.break.required","state":"PAUSA_RECOMENDADA","sensorConfirmacao":"ultrassonico+camera"}
-
-FALHA SIMULADA: comunicacao Wi-Fi indisponivel.
-FALHA DETECTADA: produtor sem conexao Wi-Fi.
-Evento aguardando recuperacao da comunicacao...
-```
-
-Enquanto o botão permanecer pressionado, a condição de falha continua ativa e o evento não é enviado ao consumidor.
-
-Ao liberar o botão, o produtor considera a condição de falha encerrada e inicia a recuperação da conexão Wi-Fi.
-
-O resultado esperado é:
-
-```text
-Falha encerrada.
-Tentando recuperar a conexao Wi-Fi...
-.
-Wi-Fi reconectado.
-Enviando evento para o consumidor...
-SUCESSO - HTTP 200
-{"status":"recebido","eventId":"evt-1"}
-```
-
-O evento que estava aguardando é enviado após a recuperação da comunicação, mantendo o mesmo identificador `evt-1`.
-
----
-
-## 6. Contrato da Comunicação
-
-O payload utilizado na comunicação entre o produtor e o consumidor possui uma versão identificada pelo campo `schemaVersion`.
-
-O contrato utilizado pode ser consultado em: [Contrato do evento - versão 2](contrato/evento-v2.json) (a [versão 1](contrato/evento-v1.json) permanece no repositório como histórico)
-
-Exemplo:
+Resposta esperada da API:
 
 ```json
-{
-  "schemaVersion": 2,
-  "eventId": "evt-1",
-  "deviceId": "esp32-mesa-01",
-  "eventType": "study.break.required",
-  "state": "PAUSA_RECOMENDADA",
-  "sensorConfirmacao": "ultrassonico+camera"
-}
+{"status":"recebido","eventId":"evt-demo-001","downstream":"accepted","downstreamEventId":"notification-evt-demo-001"}
 ```
 
----
+No terminal do consumidor WebSocket, procure `PUBLICAÇÃO WEBSOCKET RECEBIDA`; no terminal da API, procure `EVENTO RECEBIDO` e a confirmação `accepted`.
 
-## 8. Configurações da Integração
+Teste também os controles de segurança:
 
-As configurações dos componentes, comunicação, tratamento da condição de falha e principais decisões arquiteturais podem ser consultadas em: [Configurações da integração](configuracoes.md)
+- Troque o token no header `Authorization`: a API deve responder `401`.
+- Mantenha o token válido e troque `X-Device-Id` ou o `deviceId` do JSON: a API deve rejeitar a identidade (`403`).
+- Mude `eventType` para um tipo não autorizado: a API deve responder `403`.
+- Repita o comando válido com o mesmo `eventId`: a API responde sucesso com `duplicate: true` e não cria uma segunda notificação.
 
-Os códigos utilizados estão disponíveis em:
+## Configurar a simulação do ESP32
 
-- [Código do componente produtor](produtor/sketch.ino)
-- [Código do componente consumidor](consumidor/server.js)
-- [Contrato do evento](contrato/evento-v2.json)
+O código do produtor está em [produtor/sketch.ino](produtor/sketch.ino). Copie-o para `src/main.cpp` no projeto PlatformIO local. Copie [produtor/secrets.example.h](produtor/secrets.example.h) como `src/secrets.h` e configure:
 
----
+- `API_URL`: URL HTTPS pública da API, terminando em `/api/v1/eventos`.
+- `API_BEARER_TOKEN`: o mesmo valor definido como `ESP32_TOKEN` no serviço da API.
+- `API_ROOT_CA`: certificado(s) raiz confiável(is) para validar o certificado TLS do host da API. O exemplo inclui ISRG Root X1 e GTS Root R1, duas raízes usadas pelos certificados gerenciados do Render; confirme a cadeia do host escolhido e atualize o bundle se necessário.
 
-## 7. Adicionando o sensor de câmera no Wokwi
+O firmware sincroniza o relógio por NTP para validar datas do certificado TLS. No Wokwi, conecte o HC-SR04 a TRIG GPIO 4 e ECHO GPIO 2, o sinal digital da câmera simulada ao GPIO 14, botão de falha ao GPIO 12, LEDs aos GPIOs 25 e 27 e buzzer ao GPIO 19. A entrada de câmera representa uma detecção já processada: `HIGH` indica pessoa presente.
 
-O arquivo `diagram.json` do projeto Wokwi não está incluído neste repositório (ele fica no projeto local do PlatformIO, junto com `platformio.ini` e `wokwi.toml`). Para simular o novo sensor de câmera, adicione ao `diagram.json` um componente com saída digital simples — por exemplo, uma chave/botão (`wokwi-pushbutton` ou `wokwi-slide-switch`) ou um sensor PIR (`wokwi-pir-motion-sensor`), representando o sinal já processado de detecção de pessoa que uma câmera com reconhecimento embarcado forneceria.
+Faça o Build no PlatformIO e inicie a simulação. Com distância menor que 80 cm, GPIO 14 em `HIGH` e botão de falha solto, após 10 segundos o ESP32 envia o evento. O monitor serial deve mostrar `SUCESSO - HTTP 200`; nos logs dos dois serviços deve aparecer a recepção e a confirmação WebSocket. O `eventId` gerado inclui um identificador de boot e permanece igual nas tentativas HTTP do mesmo evento.
 
-Passos:
+Para simular ausência, aumente a distância ou coloque a entrada da câmera em `LOW`; o timer deixa de avançar. Para testar reconexão, pressione o botão GPIO 12 antes do evento. Ao soltá-lo, o ESP32 tenta recuperar o Wi-Fi e reenviar o evento.
 
-1. No editor do `diagram.json` (painel do Wokwi no VS Code), adicione o novo componente à lista `parts`, com um `id` (por exemplo, `"camera1"`).
-2. Na lista `connections`, ligue o pino de saída do componente ao **GPIO 14** do ESP32 (pino definido em `CAMERA_PIN` no `sketch.ino`).
-3. Durante a simulação:
-   - Sinal em `HIGH` (chave ligada / botão pressionado / PIR ativo) = câmera detecta uma pessoa.
-   - Sinal em `LOW` (chave desligada / botão solto / PIR inativo) = câmera não detecta ninguém.
-4. Salve o `diagram.json`, refaça o **Build** no PlatformIO e reinicie a simulação no Wokwi.
+O Wokwi não consegue acessar `localhost` do computador como se fosse a própria máquina. Para o teste com ESP32, publique os dois serviços com URLs HTTPS/WSS acessíveis e configure essas URLs no Render e em `secrets.h`. Os comandos `curl` acima fazem o teste integrado local dos serviços sem depender do Wokwi.
 
-Para o fluxo normal da demonstração, deixe o componente da câmera na posição que gera `HIGH` (pessoa detectada) sempre que o sensor ultrassônico também detectar presença.
+## Implantar em serviços com proxy TLS (ex.: Render)
+
+Publique dois serviços a partir deste repositório. Em ambos, use `consumidor` como diretório raiz/build e configure `NODE_ENV=production`. O Render termina HTTPS/WSS no proxy e encaminha HTTP ao processo Node; a API confia no `X-Forwarded-Proto` pelo `trust proxy` configurado e rejeita requisições sem origem HTTPS. Em produção deixe `TLS_KEY_PATH` e `TLS_CERT_PATH` vazios e use os URLs públicos `https://` e `wss://`. Consulte a documentação oficial do Render sobre [Web Services](https://render.com/docs/web-services), [WebSockets](https://render.com/docs/websocket) e [TLS gerenciado](https://render.com/docs/tls).
+
+**Serviço da API (HTTP consumer e novo WS producer)**
+
+- Comando de início: `npm start`.
+- Variáveis: `ESP32_TOKEN`, `WS_PRODUCER_TOKEN`, `WS_PRODUCER_ID=consumidor-http-01` e `WS_CONSUMER_URL=wss://<host-do-consumidor-ws>/api/v1/publicacoes`.
+- Use o mesmo `WS_PRODUCER_TOKEN` no consumidor WebSocket.
+
+**Serviço consumidor WebSocket**
+
+- Comando de início: `npm run start:ws`.
+- Variáveis: `WS_PRODUCER_TOKEN` e `WS_PRODUCER_ID=consumidor-http-01`.
+- Use o endereço WSS público desse serviço como `WS_CONSUMER_URL` na API.
+
+Configure `ESP32_TOKEN` no ambiente da API e copie o mesmo valor para `API_BEARER_TOKEN` do firmware. Não compartilhe ou versione tokens reais. Configure `API_URL` como o endereço HTTPS público da API. Reinicie os dois serviços depois de alterar suas variáveis.
+
+Se o plano suspender serviços sem tráfego, o primeiro acesso pode esperar a retomada do consumidor WebSocket. O produtor aguarda até 60 segundos pela confirmação; o firmware dá até 65 segundos à resposta HTTPS e repete a mesma publicação em caso de falha.
+
+## Limites desta demonstração
+
+- A deduplicação mantém os últimos 1.000 IDs somente em memória; reiniciar o processo limpa esse histórico. Uma implantação durável precisaria de armazenamento persistente/outbox.
+- Os tokens são credenciais compartilhadas por componente, rotacionáveis, mas não são certificados individuais de cliente. O token do ESP32 está compilado no firmware e pode ser extraído de um dispositivo físico; para produção, prefira autenticação mútua com certificado por dispositivo ou um elemento seguro.
+- `npm test` continua sem suíte automatizada; os passos acima são validações manuais ponta a ponta.

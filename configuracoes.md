@@ -1,166 +1,68 @@
-# Configurações da Integração
+# Arquitetura, segurança e autorização
 
-## Arquitetura
+## Fluxo integrado
 
-A integração é composta por um produtor, um meio de comunicação e um consumidor.
-
-- **Produtor:** ESP32 simulado no Wokwi.
-- **Comunicação:** requisição HTTPS utilizando o método POST e payload JSON.
-- **Consumidor:** API desenvolvida em Node.js com Express e hospedada no Render.
-
-Fluxo da integração:
-
-**ESP32 → HTTPS POST → API Node.js/Express**
-
-Os códigos dos componentes estão disponíveis em:
-
-- [Código do componente produtor](produtor/sketch.ino)
-- [Código do componente consumidor](consumidor/server.js)
-
-## Produtor
-
-O componente produtor é o ESP32, responsável por detectar a presença do estudante por meio de dois sensores (fusão de sensores) e controlar o tempo de estudo.
-
-O ESP32 utiliza os seguintes componentes:
-
-- Sensor ultrassônico:
-  - TRIG: GPIO 4
-  - ECHO: GPIO 2
-- Sensor de câmera (segundo sensor de presença): GPIO 14
-- Botão para simulação de falha: GPIO 12
-- LED verde: GPIO 25
-- LED vermelho: GPIO 27
-- Buzzer: GPIO 19
-
-A presença do estudante só é confirmada quando o sensor ultrassônico (distância < 80 cm) e o sensor de câmera (detecção de pessoa) concordam simultaneamente.
-
-A rede utilizada na simulação do Wokwi é:
-
-`Wokwi-GUEST`
-
-O tempo configurado para gerar o evento de pausa é de 10 segundos.
-
-Quando o estudante permanece presente durante esse período, o produtor gera um evento com o estado `PAUSA_RECOMENDADA`.
-
-## Comunicação
-
-A comunicação entre o produtor e o consumidor ocorre através de HTTPS.
-
-O ESP32 realiza uma requisição utilizando o método:
-
-`POST`
-
-Endpoint utilizado:
-
-`https://ecos-ecmd.onrender.com/api/v1/eventos`
-
-O conteúdo da requisição é enviado no formato JSON utilizando:
-
-`Content-Type: application/json`
-
-O contrato utilizado na comunicação está disponível em: [Contrato do evento - versão 2](contrato/evento-v2.json) (a [versão 1](contrato/evento-v1.json) permanece no repositório como histórico, antes da inclusão do segundo sensor).
-
-A versão atual do contrato é identificada pelo campo:
-
-`schemaVersion: 2`
-
-## Consumidor
-
-O componente consumidor é uma API desenvolvida utilizando Node.js e Express. [Código do componente consumidor](consumidor/server.js)
-
-A API recebe os eventos através da rota:
-
-`POST /api/v1/eventos`
-
-Ao receber um evento, o consumidor registra no log:
-
-- identificador do evento;
-- identificador do dispositivo;
-- tipo do evento;
-- estado recebido.
-
-Após o recebimento, o consumidor responde ao produtor com HTTP 200 e confirma o identificador do evento recebido.
-
-Exemplo do evento recebido:
-
-```json
-{
-  "schemaVersion": 2,
-  "eventId": "evt-1",
-  "deviceId": "esp32-mesa-01",
-  "eventType": "study.break.required",
-  "state": "PAUSA_RECOMENDADA",
-  "sensorConfirmacao": "ultrassonico+camera"
-}
+```text
+ESP32 (esp32-mesa-01)
+  ── HTTPS POST /api/v1/eventos ──▶ API Node.js
+                                      (HTTP consumer + WS producer)
+  ◀── HTTP 200 após confirmação ───    │
+                                      └── WSS /api/v1/publicacoes ──▶
+                                            Consumidor WebSocket
+                                            (websocket-consumer-01)
 ```
 
-## Decisões Arquiteturais
+O ESP32 original é o primeiro produtor. A API Node.js, que no fluxo anterior era apenas consumidora, valida e processa a solicitação e então atua como um segundo produtor. Ela envia uma notificação para um novo consumidor através de WebSocket sobre TLS. O endpoint HTTP só confirma o evento depois de receber a confirmação do consumidor WebSocket.
 
-Para o Marco 2 foi escolhida uma integração direta entre dois componentes independentes: o ESP32 atua como produtor dos eventos e a API Node.js/Express atua como consumidor.
+## Canais e contratos
 
-### Comunicação via HTTPS
+### ESP32 → API
 
-Foi utilizado o modelo de comunicação baseado em requisição e resposta através de HTTPS, utilizando o método POST.
+- Transporte: HTTPS, com validação do certificado do servidor por `WiFiClientSecure::setCACert`.
+- Rota: `POST /api/v1/eventos`.
+- Identidade: `Authorization: Bearer <ESP32_TOKEN>` e `X-Device-Id: esp32-mesa-01`.
+- Autorização: a credencial do ESP32 pode publicar apenas `study.break.required`. A API confere também que `deviceId` e header correspondem e que o corpo segue o contrato versão 2.
+- Contrato: [contrato/evento-v2.json](contrato/evento-v2.json).
 
-Essa abordagem foi escolhida por permitir uma integração simples entre o ESP32 e a API, além de possibilitar que o produtor receba uma resposta do consumidor confirmando o recebimento do evento através do código HTTP.
+### API → consumidor WebSocket
 
-O fluxo adotado é:
+- Transporte: WSS (WebSocket sobre TLS).
+- Rota: `/api/v1/publicacoes`.
+- Identidade: o produtor envia seu token `WS_PRODUCER_TOKEN` no handshake WebSocket. A credencial identifica `consumidor-http-01`.
+- Autorização: o consumidor só aceita o tipo `study.break.notification` com os campos permitidos e `deviceId` associado à credencial.
+- Confirmação: o consumidor devolve `accepted` ou `duplicate` com seu ID `websocket-consumer-01`; a API valida a confirmação antes de responder ao ESP32.
+- Contrato: [contrato/notificacao-websocket-v1.json](contrato/notificacao-websocket-v1.json).
 
-**ESP32 → HTTPS POST → API Node.js/Express → HTTP 200**
+## Credenciais e segredos
 
-### Separação entre produtor e consumidor
+`ESP32_TOKEN` e `WS_PRODUCER_TOKEN` são credenciais independentes. As variáveis no backend devem conter exatamente o token configurado no respectivo produtor. O firmware lê seu segredo de `secrets.h`, criado localmente a partir de [produtor/secrets.example.h](produtor/secrets.example.h). Não grave tokens em `sketch.ino`, `.env.example` nem em diagramas compartilhados. `.env`, `secrets.h`, certificados e chaves locais são ignorados pelo Git.
 
-O produtor e o consumidor possuem responsabilidades diferentes.
+O servidor compara tokens em tempo constante, limita tamanho do JSON e do frame WebSocket e valida os campos e os tipos de eventos antes de encaminhá-los. O ESP32 repete o mesmo `eventId` nas tentativas HTTP; os serviços reconhecem IDs repetidos e evitam publicar a notificação duas vezes no mesmo período de execução.
 
-O **produtor**, implementado no ESP32, é responsável por detectar a presença do estudante, controlar o tempo de estudo, gerar o evento de pausa e iniciar sua transmissão.
+## TLS em desenvolvimento e hospedagem
 
-O **consumidor**, implementado em Node.js com Express, é responsável por receber o evento enviado pelo ESP32, processar seu conteúdo e registrar as informações recebidas.
+Para execução local, gere um certificado autoassinado com SAN para `localhost` e configure `TLS_KEY_PATH`, `TLS_CERT_PATH` e `WS_CA_CERT` em `.env`. O cliente WebSocket e o `curl` confiam explicitamente no certificado local. Esse certificado é somente para desenvolvimento.
 
-Essa separação permite que os dois componentes sejam executados de forma independente, mantendo a comunicação definida pelo contrato do evento.
+Na hospedagem com proxy TLS, use HTTPS e WSS públicos. O Render termina TLS no proxy e encaminha HTTP ao processo Node.js; configure `NODE_ENV=production`, mantenha os caminhos dos arquivos TLS vazios e deixe a API validar `X-Forwarded-Proto` através do `trust proxy`. O ESP32 valida as CAs raiz configuradas em `API_ROOT_CA`; o exemplo inclui ISRG Root X1 e GTS Root R1, que cobrem cadeias dos certificados gerenciados do Render. Confirme a CA raiz efetiva do domínio publicado.
 
-- [Código do componente produtor](produtor/sketch.ino)
-- [Código do componente consumidor](consumidor/server.js)
+## Hardware do produtor
 
-### Contrato versionado
+| Componente | GPIO ESP32 |
+|---|---:|
+| HC-SR04 TRIG | 4 |
+| HC-SR04 ECHO | 2 |
+| Sinal de presença da câmera simulada | 14 |
+| Botão de falha Wi-Fi | 12 |
+| LED verde | 25 |
+| LED vermelho | 27 |
+| Buzzer | 19 |
 
-A comunicação utiliza um payload JSON com estrutura definida e versão identificada pelo campo `schemaVersion`.
+O sinal no GPIO 14 representa a saída digital já processada por um sistema de câmera: `HIGH` detecta uma pessoa e `LOW` indica ausência. A contagem começa quando a distância fica abaixo de 80 cm e os dois sinais confirmam presença. O limiar de demonstração continua em 10 segundos.
 
-A utilização de um contrato permite que produtor e consumidor conheçam previamente a estrutura dos dados utilizados na integração.
+## Arquivos
 
-A versão utilizada no Marco 2, após a inclusão do sensor de câmera, é:
-
-`schemaVersion: 2`
-
-O contrato pode ser consultado em: [Contrato do evento - versão 2](contrato/evento-v2.json)
-
-### Fusão de sensores (câmera + ultrassônico)
-
-Foi adicionado um segundo sensor ao produtor: um sensor de câmera, responsável por detectar a presença de uma pessoa de forma independente do sensor ultrassônico.
-
-A decisão de projeto foi confirmar a presença do estudante apenas quando os dois sensores concordam (lógica E), em vez de considerar isoladamente a leitura de um único sensor.
-
-Essa fusão reduz a chance de falsos positivos: uma leitura isolada e ruidosa do sensor ultrassônico não é suficiente para disparar o timer de estudo caso o sensor de câmera não confirme a presença de uma pessoa.
-
-O evento gerado passou a registrar essa confirmação no campo `sensorConfirmacao`, o que motivou a evolução do contrato para a versão 2.
-
-- [Código do componente produtor](produtor/sketch.ino)
-
-### Identificação dos eventos
-
-Cada evento possui o campo `eventId`, utilizado para identificar o evento durante a comunicação entre os componentes.
-
-No cenário implementado, o produtor gera identificadores sequenciais, como:
-
-`evt-1`
-
-Essa identificação também é retornada pelo consumidor na resposta, permitindo relacionar o evento enviado com a confirmação recebida.
-
-### Tratamento da indisponibilidade de comunicação
-
-Foi considerada a possibilidade de o produtor perder sua conectividade antes de conseguir entregar um evento ao consumidor.
-
-Quando essa condição ocorre, o evento já gerado permanece aguardando enquanto a comunicação estiver indisponível. Após a recuperação da conexão Wi-Fi, o produtor realiza o envio do mesmo evento.
-
-Essa decisão evita descartar imediatamente um evento apenas porque a comunicação estava indisponível no momento em que ele foi gerado.
-
-A condição de falha é reproduzida no protótipo através do botão conectado ao GPIO 12.
+- Produtor ESP32: [produtor/sketch.ino](produtor/sketch.ino).
+- Consumidor HTTP e produtor WebSocket: [consumidor/server.js](consumidor/server.js).
+- Novo consumidor WebSocket: [consumidor/websocket-consumer/server.js](consumidor/websocket-consumer/server.js).
+- Configuração local: [consumidor/.env.example](consumidor/.env.example).
+- Instruções de execução e implantação: [instrucoes-execucao.md](instrucoes-execucao.md).

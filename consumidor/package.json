@@ -4,6 +4,10 @@
   "description": "**Cenário escolhido:** Lembrete Inteligente de Lanche para Estudo em Casa",
   "main": "index.js",
   "scripts": {
+    "start": "node server.js",
+    "start:ws": "node websocket-consumer/server.js",
+    "start:local": "node --env-file=.env server.js",
+    "start:ws:local": "node --env-file=.env websocket-consumer/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -19,6 +23,10 @@
   },
   "homepage": "https://github.com/UFG-INF-SSU-2026/ecos#readme",
   "dependencies": {
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "ws": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=20.6.0"
   }
 }

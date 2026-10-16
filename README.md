@@ -74,3 +74,15 @@ O sistema pode ser classificado como:
 ### 9. Contexto e adaptação
 
 Uma mudança de contexto relevante é o **afastamento do estudante da mesa de estudos** (ir ao banheiro, buscar água ou descansar). Quando o sensor ultrassônico detecta distância maior que o limite predefinido (cadeira vazia) ou o sensor de câmera deixa de detectar presença, a fusão de sensores deixa de confirmar a presença e o sistema adapta seu comportamento pausando o timer de estudo. Ao retornar, o ciclo é ajustado, garantindo que o lembrete de lanche só seja acionado após tempo de estudo efetivo confirmado pelos dois sensores.
+
+---
+
+## Execução integrada e segurança
+
+O fluxo implementado agora autentica o ESP32 por HTTPS e encaminha uma notificação da API para um novo consumidor por WebSocket seguro (WSS). A API original também atua como o novo produtor WebSocket. A documentação atualizada está em:
+
+- [Instruções de execução, configuração e validação](instrucoes-execucao.md)
+- [Arquitetura e controles de segurança](configuracoes.md)
+- [Código do produtor ESP32](produtor/sketch.ino)
+- [Código da API HTTP e produtor WebSocket](consumidor/server.js)
+- [Código do consumidor WebSocket](consumidor/websocket-consumer/server.js)

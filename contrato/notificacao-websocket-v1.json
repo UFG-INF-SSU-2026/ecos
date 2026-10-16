@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "eventId": "notification-evt-demo-001",
+  "sourceEventId": "evt-demo-001",
+  "deviceId": "consumidor-http-01",
+  "eventType": "study.break.notification",
+  "state": "PAUSA_RECOMENDADA",
+  "message": "Hora da pausa para o lanche!",
+  "createdAt": "2026-10-16T12:00:00.000Z"
+}
