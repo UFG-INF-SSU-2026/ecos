@@ -1,5 +1,7 @@
 # Atividade em Grupo 01 — Análise inicial de um sistema ubíquo
 
+> **Para executar a implementação atual:** siga o [passo a passo de reprodução local](instrucoes-execucao.md), com API e banco no Docker, app Expo e sensor no Wokwi. A demonstração gera pausas recorrentes a cada 30 segundos de presença, somente enquanto o sensor está ativado no aplicativo.
+
 **Cenário escolhido:** Lembrete Inteligente de Lanche para Estudo em Casa
 
 **Integrantes:** Ana Liz Bomfim Gomes, Christopher Star Correa de Oliveira, Gustavo Alves Marçal, Mateus Silva de Sousa
@@ -74,3 +76,35 @@ O sistema pode ser classificado como:
 ### 9. Contexto e adaptação
 
 Uma mudança de contexto relevante é o **afastamento do estudante da mesa de estudos** (ir ao banheiro, buscar água ou descansar). Quando o sensor ultrassônico detecta distância maior que o limite predefinido (cadeira vazia) ou o sensor de câmera deixa de detectar presença, a fusão de sensores deixa de confirmar a presença e o sistema adapta seu comportamento pausando o timer de estudo. Ao retornar, o ciclo é ajustado, garantindo que o lembrete de lanche só seja acionado após tempo de estudo efetivo confirmado pelos dois sensores.
+
+---
+
+## Aplicativo móvel, controle do sensor e histórico
+
+A implementação atual inclui:
+
+- **React Native + Expo** em `mobile/`: login, acompanhamento de dispositivos, ativação/desativação e histórico por usuário com filtros e paginação.
+- **API Node.js** em `consumidor/`: autenticação, autorização por proprietário, comandos versionados e WebSocket para o app.
+- **TimescaleDB** com volume persistente, eventos temporais e deduplicação durável.
+- **Firmware ESP32/Wokwi** em `produtor/`: telemetria, alertas, consulta de comandos e confirmação da ativação/desativação, mantendo comunicação após o alerta.
+
+Na pasta `ecos`, inicie com:
+
+```bash
+node scripts/setup.mjs
+docker compose up --build -d --wait
+docker compose exec api node scripts/provision.js
+```
+
+Em outro terminal, execute `cloudflared tunnel --url http://localhost:3000` e mantenha-o aberto. Configure a URL HTTPS gerada em `mobile/.env` (`EXPO_PUBLIC_API_URL`) e em `produtor/secrets.h` (`API_BASE_URL`), sem `/api/v1` e sem barra final. Em `mobile/`, execute `npm ci` e `npm start -- --clear`, e entre com `USER_EMAIL`/`USER_PASSWORD` do `.env` da raiz.
+
+Para o site do Wokwi, copie `sketch.ino`, `diagram.json`, `secrets.h` configurado e `libraries.txt` da pasta `produtor/`. Ative o sensor pelo app e confirme presença com distância abaixo de 80 cm e chave da câmera em HIGH. As pausas se repetem a cada 30 segundos; após a confirmação da desativação no app, a contagem é zerada e novas pausas deixam de ser geradas. Ao reativar, começa outro ciclo do zero. O [guia completo](instrucoes-execucao.md) detalha instalação, arquivos, validação e solução de erros de JSON/TLS.
+
+- [Relatório técnico](docs/relatorio.md)
+- [Arquitetura: componentes, tecnologias (Docker, React Native, TimescaleDB...) e diagramas](docs/arquitetura.md)
+- [Testes: estratégia, casos e resultados](docs/testes.md)
+- [Instruções completas de execução e testes](instrucoes-execucao.md)
+- [Arquitetura, segurança e limites](configuracoes.md)
+- [Contrato HTTP/WebSocket do app e dispositivo](contrato/mobile-api.md)
+
+O texto das atividades iniciais acima descreve a proposta original; o fluxo atual inclui processamento local, middleware e persistência temporal. O consumidor WebSocket antigo permanece no repositório apenas como referência histórica.

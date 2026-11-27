@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "ECOS • Pausa de estudo",
+    "slug": "ecos-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "bundleIdentifier": "br.ufg.ecos", "supportsTablet": true },
+    "android": { "package": "br.ufg.ecos" },
+    "plugins": ["expo-secure-store"]
+  }
+}

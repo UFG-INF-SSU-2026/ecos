@@ -1,166 +1,45 @@
-# Configurações da Integração
+# Arquitetura e segurança — aplicativo móvel e persistência temporal
 
-## Arquitetura
+A API em `consumidor/` recebe eventos do ESP32, grava em TimescaleDB e atende o aplicativo React Native em `mobile/`. O aplicativo substitui o antigo consumidor WebSocket como interface final. O processo antigo em `websocket-consumer/` é histórico e não integra este fluxo.
 
-A integração é composta por um produtor, um meio de comunicação e um consumidor.
+## Identidades e autorização
 
-- **Produtor:** ESP32 simulado no Wokwi.
-- **Comunicação:** requisição HTTPS utilizando o método POST e payload JSON.
-- **Consumidor:** API desenvolvida em Node.js com Express e hospedada no Render.
+- `users`: identificação UUID, nome, e-mail único e senha derivada com scrypt e salt aleatório.
+- `devices`: identificador, proprietário e SHA-256 do token individual. O token tem de ser aleatório e longo; não é compartilhado com o app.
+- `sessions`: SHA-256 de tokens opacos aleatórios de 256 bits e expiração em 7 dias. O app guarda o token em Expo SecureStore; o banco não guarda seu valor em texto.
+- Login tem limite de 20 tentativas por IP em 15 minutos por instância. Consultas REST e comandos exigem sessão válida. A propriedade é verificada no servidor em todas as operações.
+- `POST /eventos` e `GET /device/config` usam Bearer do dispositivo e `X-Device-Id`. O `userId` de um evento é obtido da associação do dispositivo no banco. Campos extras enviados pelo sensor são descartados na normalização.
+- O WebSocket usa autenticação na primeira mensagem, com prazo de 5 segundos, para funcionar no cliente nativo sem colocar token na URL. O servidor só envia avisos ao proprietário autenticado. Sessões são revalidadas a cada 15 segundos, incluindo expiração/revogação; REST verifica a cada requisição.
+- Provisionamento é administrativo por CLI, sem cadastro público. Recadastramento troca senha/token e revoga sessões; o script não transfere dispositivos entre contas.
 
-Fluxo da integração:
+## Persistência e consultas
 
-**ESP32 → HTTPS POST → API Node.js/Express**
+`events` é uma hypertable TimescaleDB particionada por `time` (TIMESTAMPTZ UTC), com índices por usuário/tempo e usuário/dispositivo/tempo. Todos os eventos de domínio aceitos, notificações geradas, solicitações de comando e confirmações são gravados ali. O horário do histórico é o de ingestão no servidor, não o horário de captura do ESP32. Requests de leitura, login e logs de transporte não são eventos de domínio.
 
-Os códigos dos componentes estão disponíveis em:
+`event_receipts` usa uma chave única `(device_id,event_id)` independente do tempo; a verificação do hash normalizado detecta reutilização conflitante (409). As transações travam a linha do dispositivo para serializar comandos e relatos concorrentes. Gravação do evento, notificação derivada, recibo idempotente e atualização de estado são atômicos. A resposta 200 só ocorre após COMMIT; banco indisponível retorna erro, permitindo reenvio com o mesmo ID.
 
-- [Código do componente produtor](produtor/sketch.ino)
-- [Código do componente consumidor](consumidor/server.js)
+A API pagina por `(time,id)` com cursor que conserva microssegundos, sem offsets que mudem com novas inserções. Todas as consultas usam parâmetros SQL e filtram pelo usuário da sessão. Filtros incluem dispositivo, tipo, início/fim UTC e limite até 100 registros. A UI converte horários para o fuso do aparelho.
 
-## Produtor
+PostgreSQL `LISTEN/NOTIFY` dispara apenas depois do COMMIT. O aviso WebSocket contém `events.changed` e `deviceId`; o app consulta os registros duráveis por REST. O aviso não é uma fila persistente: a recuperação vem do histórico, da sincronização na reconexão e da consulta periódica. Múltiplas instâncias da API recebem NOTIFY do mesmo banco. Não configure o listener através de um pooler em modo transaction pooling.
 
-O componente produtor é o ESP32, responsável por detectar a presença do estudante por meio de dois sensores (fusão de sensores) e controlar o tempo de estudo.
+## Caminho de retorno ao ESP32
 
-O ESP32 utiliza os seguintes componentes:
+1. O app gera um UUID `commandId` e envia `{enabled,commandId}`. O servidor verifica o proprietário e grava o comando, uma nova versão do estado desejado e `sensor.command.requested` na mesma transação.
+2. O sensor consulta a configuração a cada 2 segundos nominais por HTTPS. Essa opção funciona no Wokwi sem servidor de entrada no ESP32.
+3. Ao aplicar uma versão nova, o firmware zera timer/alerta. Ao desativar, desliga LEDs/buzzer e suspende leituras físicas, mantendo a comunicação. Na inicialização, aguarda uma configuração autenticada antes de medir.
+4. O ESP32 envia `sensor.state.reported` com a versão/estado aplicados. O backend só aceita combinações correspondentes aos comandos existentes (ou versão inicial 0/ativado). A confirmação registra `sensor.command.confirmed` uma única vez e atualiza o estado reportado sem regredir por relatos antigos.
+5. A interface compara estado desejado e reportado. Envio HTTP 202 significa **persistido/pendente**, não aplicado. Um dispositivo offline mantém o último estado conhecido e a pendência visível.
 
-- Sensor ultrassônico:
-  - TRIG: GPIO 4
-  - ECHO: GPIO 2
-- Sensor de câmera (segundo sensor de presença): GPIO 14
-- Botão para simulação de falha: GPIO 12
-- LED verde: GPIO 25
-- LED vermelho: GPIO 27
-- Buzzer: GPIO 19
+A configuração representa **o estado desejado mais recente**. Se várias solicitações chegarem enquanto o sensor estiver offline, ele pode aplicar diretamente a última; as anteriores continuam auditadas como solicitadas, sem falsa confirmação. Uma confirmação atrasada de uma versão antiga não apaga a pendência de uma versão nova.
 
-A presença do estudante só é confirmada quando o sensor ultrassônico (distância < 80 cm) e o sensor de câmera (detecção de pessoa) concordam simultaneamente.
+## Transporte e limites
 
-A rede utilizada na simulação do Wokwi é:
+- Firmware usa NTP e `WiFiClientSecure::setCACert`, validando certificado, validade e hostname. O bundle inclui a intermediária WE1 como âncora confiável para reduzir o custo da cadeia no Wokwi/Cloudflare; ela expira em 20/02/2029 e precisa ser atualizada se o host mudar de CA. Handshake tem limite de 30 segundos; conexão e resposta HTTP, 10 segundos cada.
+- App aceita HTTP apenas em desenvolvimento. Em produção, API e WebSocket exigem HTTPS/WSS. `TRUST_PROXY=1` só se aplica a um proxy confiável que protege a porta interna.
+- JSON e frames WebSocket são limitados a 4 KiB. Clientes lentos são desconectados para refazer sincronização REST. A API evita colocar credenciais em respostas, logs e URLs.
+- O Docker Compose padrão é de desenvolvimento: HTTP na porta 3000 e banco ligado somente à interface local. Use HTTPS público para integrar Wokwi/celular.
+- Leituras temporais são amostradas a cada 15 segundos, com backpressure; não se tenta registrar cada pulso do sensor. Pendências do firmware ficam em RAM e podem se perder se ele reiniciar antes de conseguir publicar. Armazenamento offline persistente no hardware não está implementado.
+- Alertas móveis são exibidos com o aplicativo aberto. Push em segundo plano não está implementado; o histórico continua disponível no próximo acesso.
+- Sessões expiradas são removidas no login. Recibos idempotentes e eventos não têm retenção automática nesta versão; planeje retenção e backups para uma implantação longa.
 
-`Wokwi-GUEST`
-
-O tempo configurado para gerar o evento de pausa é de 10 segundos.
-
-Quando o estudante permanece presente durante esse período, o produtor gera um evento com o estado `PAUSA_RECOMENDADA`.
-
-## Comunicação
-
-A comunicação entre o produtor e o consumidor ocorre através de HTTPS.
-
-O ESP32 realiza uma requisição utilizando o método:
-
-`POST`
-
-Endpoint utilizado:
-
-`https://ecos-ecmd.onrender.com/api/v1/eventos`
-
-O conteúdo da requisição é enviado no formato JSON utilizando:
-
-`Content-Type: application/json`
-
-O contrato utilizado na comunicação está disponível em: [Contrato do evento - versão 2](contrato/evento-v2.json) (a [versão 1](contrato/evento-v1.json) permanece no repositório como histórico, antes da inclusão do segundo sensor).
-
-A versão atual do contrato é identificada pelo campo:
-
-`schemaVersion: 2`
-
-## Consumidor
-
-O componente consumidor é uma API desenvolvida utilizando Node.js e Express. [Código do componente consumidor](consumidor/server.js)
-
-A API recebe os eventos através da rota:
-
-`POST /api/v1/eventos`
-
-Ao receber um evento, o consumidor registra no log:
-
-- identificador do evento;
-- identificador do dispositivo;
-- tipo do evento;
-- estado recebido.
-
-Após o recebimento, o consumidor responde ao produtor com HTTP 200 e confirma o identificador do evento recebido.
-
-Exemplo do evento recebido:
-
-```json
-{
-  "schemaVersion": 2,
-  "eventId": "evt-1",
-  "deviceId": "esp32-mesa-01",
-  "eventType": "study.break.required",
-  "state": "PAUSA_RECOMENDADA",
-  "sensorConfirmacao": "ultrassonico+camera"
-}
-```
-
-## Decisões Arquiteturais
-
-Para o Marco 2 foi escolhida uma integração direta entre dois componentes independentes: o ESP32 atua como produtor dos eventos e a API Node.js/Express atua como consumidor.
-
-### Comunicação via HTTPS
-
-Foi utilizado o modelo de comunicação baseado em requisição e resposta através de HTTPS, utilizando o método POST.
-
-Essa abordagem foi escolhida por permitir uma integração simples entre o ESP32 e a API, além de possibilitar que o produtor receba uma resposta do consumidor confirmando o recebimento do evento através do código HTTP.
-
-O fluxo adotado é:
-
-**ESP32 → HTTPS POST → API Node.js/Express → HTTP 200**
-
-### Separação entre produtor e consumidor
-
-O produtor e o consumidor possuem responsabilidades diferentes.
-
-O **produtor**, implementado no ESP32, é responsável por detectar a presença do estudante, controlar o tempo de estudo, gerar o evento de pausa e iniciar sua transmissão.
-
-O **consumidor**, implementado em Node.js com Express, é responsável por receber o evento enviado pelo ESP32, processar seu conteúdo e registrar as informações recebidas.
-
-Essa separação permite que os dois componentes sejam executados de forma independente, mantendo a comunicação definida pelo contrato do evento.
-
-- [Código do componente produtor](produtor/sketch.ino)
-- [Código do componente consumidor](consumidor/server.js)
-
-### Contrato versionado
-
-A comunicação utiliza um payload JSON com estrutura definida e versão identificada pelo campo `schemaVersion`.
-
-A utilização de um contrato permite que produtor e consumidor conheçam previamente a estrutura dos dados utilizados na integração.
-
-A versão utilizada no Marco 2, após a inclusão do sensor de câmera, é:
-
-`schemaVersion: 2`
-
-O contrato pode ser consultado em: [Contrato do evento - versão 2](contrato/evento-v2.json)
-
-### Fusão de sensores (câmera + ultrassônico)
-
-Foi adicionado um segundo sensor ao produtor: um sensor de câmera, responsável por detectar a presença de uma pessoa de forma independente do sensor ultrassônico.
-
-A decisão de projeto foi confirmar a presença do estudante apenas quando os dois sensores concordam (lógica E), em vez de considerar isoladamente a leitura de um único sensor.
-
-Essa fusão reduz a chance de falsos positivos: uma leitura isolada e ruidosa do sensor ultrassônico não é suficiente para disparar o timer de estudo caso o sensor de câmera não confirme a presença de uma pessoa.
-
-O evento gerado passou a registrar essa confirmação no campo `sensorConfirmacao`, o que motivou a evolução do contrato para a versão 2.
-
-- [Código do componente produtor](produtor/sketch.ino)
-
-### Identificação dos eventos
-
-Cada evento possui o campo `eventId`, utilizado para identificar o evento durante a comunicação entre os componentes.
-
-No cenário implementado, o produtor gera identificadores sequenciais, como:
-
-`evt-1`
-
-Essa identificação também é retornada pelo consumidor na resposta, permitindo relacionar o evento enviado com a confirmação recebida.
-
-### Tratamento da indisponibilidade de comunicação
-
-Foi considerada a possibilidade de o produtor perder sua conectividade antes de conseguir entregar um evento ao consumidor.
-
-Quando essa condição ocorre, o evento já gerado permanece aguardando enquanto a comunicação estiver indisponível. Após a recuperação da conexão Wi-Fi, o produtor realiza o envio do mesmo evento.
-
-Essa decisão evita descartar imediatamente um evento apenas porque a comunicação estava indisponível no momento em que ele foi gerado.
-
-A condição de falha é reproduzida no protótipo através do botão conectado ao GPIO 12.
+Veja [instrucoes-execucao.md](instrucoes-execucao.md) para execução local, provisionamento, Wokwi, hospedagem e testes.

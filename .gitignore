@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.certs/
+secrets.h
+.pio/
+.expo/
+dist-check/
+mobile/dist/
+__pycache__/
+.DS_Store
