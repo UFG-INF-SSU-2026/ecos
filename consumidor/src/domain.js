@@ -97,4 +97,4 @@ function deviceView(row) {
     reportedVersion: row.reported_version, lastSeenAt: row.last_seen_at,
     pending: row.desired_version !== row.reported_version || row.desired_enabled !== row.reported_enabled };
 }
-module.exports = { ingest, setEnabled, fail, deviceView, UUID, ID };
+module.exports = { ingest, setEnabled, fail, deviceView, validateEvent, UUID, ID };

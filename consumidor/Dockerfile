@@ -12,4 +12,4 @@ CMD ["node", "server.js"]
 
 FROM runtime AS test
 COPY test ./test
-CMD ["node", "--test", "test/integration.test.js"]
+CMD ["node", "--test", "test/auth.test.js", "test/domain.test.js", "test/app.test.js", "test/realtime.test.js", "test/contrato.test.js", "test/integration.test.js"]

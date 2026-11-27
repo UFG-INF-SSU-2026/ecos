@@ -11,7 +11,8 @@ export type StudyEvent = {
 export type EventPage = { events: StudyEvent[]; nextCursor: string | null };
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/+$/, '');
 export class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  status: number;
+  constructor(message: string, status: number) { super(message); this.status = status; }
 }
 export async function request<T>(path: string, token?: string, body?: unknown): Promise<T> {
   if (!/^https:\/\/[^/]+/.test(API_URL) && !(__DEV__ && /^http:\/\/[^/]+/.test(API_URL)))
