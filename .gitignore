@@ -5,3 +5,8 @@ node_modules/
 .certs/
 secrets.h
 .pio/
+.expo/
+dist-check/
+mobile/dist/
+__pycache__/
+.DS_Store

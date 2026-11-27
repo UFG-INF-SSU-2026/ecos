@@ -1,68 +1,45 @@
-# Arquitetura, segurança e autorização
+# Arquitetura e segurança — aplicativo móvel e persistência temporal
 
-## Fluxo integrado
+A API em `consumidor/` recebe eventos do ESP32, grava em TimescaleDB e atende o aplicativo React Native em `mobile/`. O aplicativo substitui o antigo consumidor WebSocket como interface final. O processo antigo em `websocket-consumer/` é histórico e não integra este fluxo.
 
-```text
-ESP32 (esp32-mesa-01)
-  ── HTTPS POST /api/v1/eventos ──▶ API Node.js
-                                      (HTTP consumer + WS producer)
-  ◀── HTTP 200 após confirmação ───    │
-                                      └── WSS /api/v1/publicacoes ──▶
-                                            Consumidor WebSocket
-                                            (websocket-consumer-01)
-```
+## Identidades e autorização
 
-O ESP32 original é o primeiro produtor. A API Node.js, que no fluxo anterior era apenas consumidora, valida e processa a solicitação e então atua como um segundo produtor. Ela envia uma notificação para um novo consumidor através de WebSocket sobre TLS. O endpoint HTTP só confirma o evento depois de receber a confirmação do consumidor WebSocket.
+- `users`: identificação UUID, nome, e-mail único e senha derivada com scrypt e salt aleatório.
+- `devices`: identificador, proprietário e SHA-256 do token individual. O token tem de ser aleatório e longo; não é compartilhado com o app.
+- `sessions`: SHA-256 de tokens opacos aleatórios de 256 bits e expiração em 7 dias. O app guarda o token em Expo SecureStore; o banco não guarda seu valor em texto.
+- Login tem limite de 20 tentativas por IP em 15 minutos por instância. Consultas REST e comandos exigem sessão válida. A propriedade é verificada no servidor em todas as operações.
+- `POST /eventos` e `GET /device/config` usam Bearer do dispositivo e `X-Device-Id`. O `userId` de um evento é obtido da associação do dispositivo no banco. Campos extras enviados pelo sensor são descartados na normalização.
+- O WebSocket usa autenticação na primeira mensagem, com prazo de 5 segundos, para funcionar no cliente nativo sem colocar token na URL. O servidor só envia avisos ao proprietário autenticado. Sessões são revalidadas a cada 15 segundos, incluindo expiração/revogação; REST verifica a cada requisição.
+- Provisionamento é administrativo por CLI, sem cadastro público. Recadastramento troca senha/token e revoga sessões; o script não transfere dispositivos entre contas.
 
-## Canais e contratos
+## Persistência e consultas
 
-### ESP32 → API
+`events` é uma hypertable TimescaleDB particionada por `time` (TIMESTAMPTZ UTC), com índices por usuário/tempo e usuário/dispositivo/tempo. Todos os eventos de domínio aceitos, notificações geradas, solicitações de comando e confirmações são gravados ali. O horário do histórico é o de ingestão no servidor, não o horário de captura do ESP32. Requests de leitura, login e logs de transporte não são eventos de domínio.
 
-- Transporte: HTTPS, com validação do certificado do servidor por `WiFiClientSecure::setCACert`.
-- Rota: `POST /api/v1/eventos`.
-- Identidade: `Authorization: Bearer <ESP32_TOKEN>` e `X-Device-Id: esp32-mesa-01`.
-- Autorização: a credencial do ESP32 pode publicar apenas `study.break.required`. A API confere também que `deviceId` e header correspondem e que o corpo segue o contrato versão 2.
-- Contrato: [contrato/evento-v2.json](contrato/evento-v2.json).
+`event_receipts` usa uma chave única `(device_id,event_id)` independente do tempo; a verificação do hash normalizado detecta reutilização conflitante (409). As transações travam a linha do dispositivo para serializar comandos e relatos concorrentes. Gravação do evento, notificação derivada, recibo idempotente e atualização de estado são atômicos. A resposta 200 só ocorre após COMMIT; banco indisponível retorna erro, permitindo reenvio com o mesmo ID.
 
-### API → consumidor WebSocket
+A API pagina por `(time,id)` com cursor que conserva microssegundos, sem offsets que mudem com novas inserções. Todas as consultas usam parâmetros SQL e filtram pelo usuário da sessão. Filtros incluem dispositivo, tipo, início/fim UTC e limite até 100 registros. A UI converte horários para o fuso do aparelho.
 
-- Transporte: WSS (WebSocket sobre TLS).
-- Rota: `/api/v1/publicacoes`.
-- Identidade: o produtor envia seu token `WS_PRODUCER_TOKEN` no handshake WebSocket. A credencial identifica `consumidor-http-01`.
-- Autorização: o consumidor só aceita o tipo `study.break.notification` com os campos permitidos e `deviceId` associado à credencial.
-- Confirmação: o consumidor devolve `accepted` ou `duplicate` com seu ID `websocket-consumer-01`; a API valida a confirmação antes de responder ao ESP32.
-- Contrato: [contrato/notificacao-websocket-v1.json](contrato/notificacao-websocket-v1.json).
+PostgreSQL `LISTEN/NOTIFY` dispara apenas depois do COMMIT. O aviso WebSocket contém `events.changed` e `deviceId`; o app consulta os registros duráveis por REST. O aviso não é uma fila persistente: a recuperação vem do histórico, da sincronização na reconexão e da consulta periódica. Múltiplas instâncias da API recebem NOTIFY do mesmo banco. Não configure o listener através de um pooler em modo transaction pooling.
 
-## Credenciais e segredos
+## Caminho de retorno ao ESP32
 
-`ESP32_TOKEN` e `WS_PRODUCER_TOKEN` são credenciais independentes. As variáveis no backend devem conter exatamente o token configurado no respectivo produtor. O firmware lê seu segredo de `secrets.h`, criado localmente a partir de [produtor/secrets.example.h](produtor/secrets.example.h). Não grave tokens em `sketch.ino`, `.env.example` nem em diagramas compartilhados. `.env`, `secrets.h`, certificados e chaves locais são ignorados pelo Git.
+1. O app gera um UUID `commandId` e envia `{enabled,commandId}`. O servidor verifica o proprietário e grava o comando, uma nova versão do estado desejado e `sensor.command.requested` na mesma transação.
+2. O sensor consulta a configuração a cada 2 segundos nominais por HTTPS. Essa opção funciona no Wokwi sem servidor de entrada no ESP32.
+3. Ao aplicar uma versão nova, o firmware zera timer/alerta. Ao desativar, desliga LEDs/buzzer e suspende leituras físicas, mantendo a comunicação. Na inicialização, aguarda uma configuração autenticada antes de medir.
+4. O ESP32 envia `sensor.state.reported` com a versão/estado aplicados. O backend só aceita combinações correspondentes aos comandos existentes (ou versão inicial 0/ativado). A confirmação registra `sensor.command.confirmed` uma única vez e atualiza o estado reportado sem regredir por relatos antigos.
+5. A interface compara estado desejado e reportado. Envio HTTP 202 significa **persistido/pendente**, não aplicado. Um dispositivo offline mantém o último estado conhecido e a pendência visível.
 
-O servidor compara tokens em tempo constante, limita tamanho do JSON e do frame WebSocket e valida os campos e os tipos de eventos antes de encaminhá-los. O ESP32 repete o mesmo `eventId` nas tentativas HTTP; os serviços reconhecem IDs repetidos e evitam publicar a notificação duas vezes no mesmo período de execução.
+A configuração representa **o estado desejado mais recente**. Se várias solicitações chegarem enquanto o sensor estiver offline, ele pode aplicar diretamente a última; as anteriores continuam auditadas como solicitadas, sem falsa confirmação. Uma confirmação atrasada de uma versão antiga não apaga a pendência de uma versão nova.
 
-## TLS em desenvolvimento e hospedagem
+## Transporte e limites
 
-Para execução local, gere um certificado autoassinado com SAN para `localhost` e configure `TLS_KEY_PATH`, `TLS_CERT_PATH` e `WS_CA_CERT` em `.env`. O cliente WebSocket e o `curl` confiam explicitamente no certificado local. Esse certificado é somente para desenvolvimento.
+- Firmware usa NTP e `WiFiClientSecure::setCACert`, validando certificado, validade e hostname. O bundle inclui a intermediária WE1 como âncora confiável para reduzir o custo da cadeia no Wokwi/Cloudflare; ela expira em 20/02/2029 e precisa ser atualizada se o host mudar de CA. Handshake tem limite de 30 segundos; conexão e resposta HTTP, 10 segundos cada.
+- App aceita HTTP apenas em desenvolvimento. Em produção, API e WebSocket exigem HTTPS/WSS. `TRUST_PROXY=1` só se aplica a um proxy confiável que protege a porta interna.
+- JSON e frames WebSocket são limitados a 4 KiB. Clientes lentos são desconectados para refazer sincronização REST. A API evita colocar credenciais em respostas, logs e URLs.
+- O Docker Compose padrão é de desenvolvimento: HTTP na porta 3000 e banco ligado somente à interface local. Use HTTPS público para integrar Wokwi/celular.
+- Leituras temporais são amostradas a cada 15 segundos, com backpressure; não se tenta registrar cada pulso do sensor. Pendências do firmware ficam em RAM e podem se perder se ele reiniciar antes de conseguir publicar. Armazenamento offline persistente no hardware não está implementado.
+- Alertas móveis são exibidos com o aplicativo aberto. Push em segundo plano não está implementado; o histórico continua disponível no próximo acesso.
+- Sessões expiradas são removidas no login. Recibos idempotentes e eventos não têm retenção automática nesta versão; planeje retenção e backups para uma implantação longa.
 
-Na hospedagem com proxy TLS, use HTTPS e WSS públicos. O Render termina TLS no proxy e encaminha HTTP ao processo Node.js; configure `NODE_ENV=production`, mantenha os caminhos dos arquivos TLS vazios e deixe a API validar `X-Forwarded-Proto` através do `trust proxy`. O ESP32 valida as CAs raiz configuradas em `API_ROOT_CA`; o exemplo inclui ISRG Root X1 e GTS Root R1, que cobrem cadeias dos certificados gerenciados do Render. Confirme a CA raiz efetiva do domínio publicado.
-
-## Hardware do produtor
-
-| Componente | GPIO ESP32 |
-|---|---:|
-| HC-SR04 TRIG | 4 |
-| HC-SR04 ECHO | 2 |
-| Sinal de presença da câmera simulada | 14 |
-| Botão de falha Wi-Fi | 12 |
-| LED verde | 25 |
-| LED vermelho | 27 |
-| Buzzer | 19 |
-
-O sinal no GPIO 14 representa a saída digital já processada por um sistema de câmera: `HIGH` detecta uma pessoa e `LOW` indica ausência. A contagem começa quando a distância fica abaixo de 80 cm e os dois sinais confirmam presença. O limiar de demonstração continua em 10 segundos.
-
-## Arquivos
-
-- Produtor ESP32: [produtor/sketch.ino](produtor/sketch.ino).
-- Consumidor HTTP e produtor WebSocket: [consumidor/server.js](consumidor/server.js).
-- Novo consumidor WebSocket: [consumidor/websocket-consumer/server.js](consumidor/websocket-consumer/server.js).
-- Configuração local: [consumidor/.env.example](consumidor/.env.example).
-- Instruções de execução e implantação: [instrucoes-execucao.md](instrucoes-execucao.md).
+Veja [instrucoes-execucao.md](instrucoes-execucao.md) para execução local, provisionamento, Wokwi, hospedagem e testes.

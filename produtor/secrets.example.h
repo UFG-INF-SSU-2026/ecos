@@ -2,16 +2,35 @@
 
 // Copie este arquivo para secrets.h no projeto PlatformIO/Wokwi.
 // Gere um token longo com: openssl rand -hex 32
-// O valor precisa ser igual ao ESP32_TOKEN configurado no consumidor HTTP.
+// O valor precisa ser igual ao DEVICE_TOKEN configurado no consumidor HTTP.
 static const char* WIFI_SSID = "Wokwi-GUEST";
 static const char* WIFI_PASSWORD = "";
-static const char* API_URL = "https://ecos-ecmd.onrender.com/api/v1/eventos";
-static const char* API_BEARER_TOKEN = "COLOQUE_AQUI_O_MESMO_ESP32_TOKEN_DO_SERVIDOR";
+static const char* API_BASE_URL = "https://SEU-HOST-HTTPS"; // Sem barra final e sem /api/v1.
+static const char* DEVICE_ID = "esp32-mesa-01";
+static const char* API_BEARER_TOKEN = "COLOQUE_AQUI_O_MESMO_DEVICE_TOKEN_DO_SERVIDOR";
 
-// CAs raiz públicas. O host Render consultado usa atualmente a cadeia
-// Google Trust Services WE1 -> GTS Root R4; outras cadeias podem exigir
-// raízes adicionais, que devem ser adicionadas a este bundle.
+// Bundle de CAs confiaveis. WE1 foi obtida por uma conexao TLS validada.
+// Usa-la como ancora reduz a cadeia verificada no handshake do Wokwi.
+// WE1 expira em 20/02/2029; atualize o bundle se o host mudar de CA.
+// A validacao do certificado, da validade e do hostname permanece ativa.
 static const char* API_ROOT_CA = R"CERT(-----BEGIN CERTIFICATE-----
+MIICnzCCAiWgAwIBAgIQf/MZd5csIkp2FV0TttaF4zAKBggqhkjOPQQDAzBHMQsw
+CQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEU
+MBIGA1UEAxMLR1RTIFJvb3QgUjQwHhcNMjMxMjEzMDkwMDAwWhcNMjkwMjIwMTQw
+MDAwWjA7MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVR29vZ2xlIFRydXN0IFNlcnZp
+Y2VzMQwwCgYDVQQDEwNXRTEwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARvzTr+
+Z1dHTCEDhUDCR127WEcPQMFcF4XGGTfn1XzthkubgdnXGhOlCgP4mMTG6J7/EFmP
+LCaY9eYmJbsPAvpWo4H+MIH7MA4GA1UdDwEB/wQEAwIBhjAdBgNVHSUEFjAUBggr
+BgEFBQcDAQYIKwYBBQUHAwIwEgYDVR0TAQH/BAgwBgEB/wIBADAdBgNVHQ4EFgQU
+kHeSNWfE/6jMqeZ72YB5e8yT+TgwHwYDVR0jBBgwFoAUgEzW63T/STaj1dj8tT7F
+avCUHYwwNAYIKwYBBQUHAQEEKDAmMCQGCCsGAQUFBzAChhhodHRwOi8vaS5wa2ku
+Z29vZy9yNC5jcnQwKwYDVR0fBCQwIjAgoB6gHIYaaHR0cDovL2MucGtpLmdvb2cv
+ci9yNC5jcmwwEwYDVR0gBAwwCjAIBgZngQwBAgEwCgYIKoZIzj0EAwMDaAAwZQIx
+AOcCq1HW90OVznX+0RGU1cxAQXomvtgM8zItPZCuFQ8jSBJSjz5keROv9aYsAm5V
+sQIwJonMaAFi54mrfhfoFNZEfuNMSQ6/bIBiNLiyoX46FohQvKeIoJ99cx7sUkFN
+7uJW
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
 TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
 cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4

@@ -1,0 +1,43 @@
+name: ecos
+services:
+  db:
+    image: timescale/timescaledb:2.23.0-pg17
+    environment:
+      POSTGRES_DB: ecos
+      POSTGRES_USER: ecos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Execute node scripts/setup.mjs}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecos -d ecos"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  api:
+    build:
+      context: ./consumidor
+      target: runtime
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://ecos:${POSTGRES_PASSWORD}@db:5432/ecos
+      HOST: 0.0.0.0
+      PORT: 3000
+      TLS_KEY_PATH: ""
+      TLS_CERT_PATH: ""
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "node scripts/migrate.js && exec node server.js"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+volumes:
+  timescale-data:

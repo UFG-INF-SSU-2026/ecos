@@ -1,14 +1,18 @@
 {
   "name": "ecos",
   "version": "1.0.0",
-  "description": "**Cenário escolhido:** Lembrete Inteligente de Lanche para Estudo em Casa",
-  "main": "index.js",
+  "description": "**Cen\u00e1rio escolhido:** Lembrete Inteligente de Lanche para Estudo em Casa",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "start:ws": "node websocket-consumer/server.js",
-    "start:local": "node --env-file=.env server.js",
+    "start:local": "node --env-file=../.env server.js",
     "start:ws:local": "node --env-file=.env websocket-consumer/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/auth.test.js test/integration.test.js",
+    "db:migrate": "node --env-file=../.env scripts/migrate.js",
+    "db:provision": "node --env-file=../.env scripts/provision.js",
+    "test:integration": "node --test test/integration.test.js",
+    "simulate:device": "node --env-file=../.env scripts/simulate-device.js"
   },
   "repository": {
     "type": "git",
@@ -24,9 +28,11 @@
   "homepage": "https://github.com/UFG-INF-SSU-2026/ecos#readme",
   "dependencies": {
     "express": "^5.2.1",
-    "ws": "^8.22.0"
+    "ws": "^8.22.0",
+    "pg": "^8.16.3",
+    "express-rate-limit": "^8.2.1"
   },
   "engines": {
-    "node": ">=20.6.0"
+    "node": ">=22.14.0"
   }
 }
