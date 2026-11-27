@@ -381,13 +381,14 @@ Verificações adicionais:
 cd consumidor
 npm test
 cd ../mobile
+npm test
 npm run typecheck
 npm run export:check
 cd ../produtor
 pio run
 ```
 
-`npm test` executa o teste de senha e pula a integração se `TEST_DATABASE_URL` não estiver definida. Para integração, use preferencialmente o Compose acima; o teste rejeita banco cujo nome não termina em `_test` e limpa somente esse banco de teste.
+`npm test` em `consumidor/` executa os testes unitários (domínio, autenticação, rotas HTTP, WebSocket e contratos) e pula a integração se `TEST_DATABASE_URL` não estiver definida. Em `mobile/`, `npm test` verifica o cliente da API do app. Os mesmos testes rodam no GitHub Actions a cada push; a lista de casos e os resultados estão em [docs/testes.md](docs/testes.md). Para integração, use preferencialmente o Compose acima; o teste rejeita banco cujo nome não termina em `_test` e limpa somente esse banco de teste.
 
 ## 14. Hospedagem
 

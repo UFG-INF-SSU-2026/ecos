@@ -100,6 +100,9 @@ Em outro terminal, execute `cloudflared tunnel --url http://localhost:3000` e ma
 
 Para o site do Wokwi, copie `sketch.ino`, `diagram.json`, `secrets.h` configurado e `libraries.txt` da pasta `produtor/`. Ative o sensor pelo app e confirme presença com distância abaixo de 80 cm e chave da câmera em HIGH. As pausas se repetem a cada 30 segundos; após a confirmação da desativação no app, a contagem é zerada e novas pausas deixam de ser geradas. Ao reativar, começa outro ciclo do zero. O [guia completo](instrucoes-execucao.md) detalha instalação, arquivos, validação e solução de erros de JSON/TLS.
 
+- [Relatório técnico](docs/relatorio.md)
+- [Arquitetura: componentes, tecnologias (Docker, React Native, TimescaleDB...) e diagramas](docs/arquitetura.md)
+- [Testes: estratégia, casos e resultados](docs/testes.md)
 - [Instruções completas de execução e testes](instrucoes-execucao.md)
 - [Arquitetura, segurança e limites](configuracoes.md)
 - [Contrato HTTP/WebSocket do app e dispositivo](contrato/mobile-api.md)
