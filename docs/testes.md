@@ -211,7 +211,16 @@ Execução local em 27/11/2026 (Windows 11, Node 26.13):
 | App — cliente da API (`npm test`) | 10 | 10 | 0 | 0 |
 | App — `npm run typecheck` | — | ok | — | — |
 
-A integração com TimescaleDB, a construção da imagem Docker e a compilação do firmware rodam no GitHub Actions. O resultado de cada execução fica na aba **Actions** do repositório.
+Execução no GitHub Actions em 27/11/2026 (Ubuntu, Node 22), workflow `Testes`, com os 4 jobs aprovados:
+
+| Job | Resultado |
+|---|---|
+| API — testes unitários | 60 passaram, 0 falharam |
+| API — integração (Docker + TimescaleDB) | 71 passaram, 0 falharam, 4 pulados*; os 14 subtestes de integração passaram; imagem `runtime` construída |
+| App React Native — testes e typecheck | 10 passaram; `tsc` sem erros |
+| Firmware ESP32 — compilação PlatformIO | Compilado com sucesso |
+
+\* Os 4 pulados são os testes de contrato. A pasta `contrato/` fica fora do contexto da imagem Docker, então esses testes rodam no job de unitários. O resultado de cada execução fica na aba **Actions** do repositório.
 
 **Cobertura das suítes sem banco** (`npm run test:coverage`):
 

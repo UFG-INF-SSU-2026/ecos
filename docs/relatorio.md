@@ -115,7 +115,7 @@ A estratégia completa, a lista de casos e o roteiro manual estão em [testes.md
 | Compilação e tipos | CI: firmware, `tsc`, imagem Docker | 3 verificações |
 | Manual (Wokwi + app) | `docs/testes.md` §5 | 12 cenários |
 
-**Resultado local:** 60 testes da API e 10 do app passaram, sem falhas. O typecheck do app passou. A integração com banco real roda no Docker e no GitHub Actions.
+**Resultado:** localmente, 60 testes da API e 10 do app passaram, sem falhas, e o typecheck do app passou. No GitHub Actions, os 4 jobs foram aprovados: unitários, integração com TimescaleDB real no Docker (14 subtestes), app e compilação do firmware.
 
 Durante a escrita dos testes, foi feito um único ajuste no código de produção: `ApiError` (em `mobile/src/api.ts`) deixou de usar *parameter property* do TypeScript e passou a declarar a propriedade `status` explicitamente. O comportamento é o mesmo, e o módulo pode ser executado diretamente pelo Node nos testes. `validateEvent` também passou a ser exportado por `domain.js` para ser testado isoladamente.
 
